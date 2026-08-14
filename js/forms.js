@@ -60,6 +60,8 @@ export function createForms(callbacks) {
     nodeLabel: $('node-label'),
     nodeStatusWrap: $('node-status-wrap'),
     nodeStatus: $('node-status'),
+    nodeKindWrap: $('node-kind-wrap'),
+    nodeKind: $('node-kind'),
     fieldRows: $('field-rows'),
     addFieldRow: $('add-field-row'),
     nodeIdPreview: $('node-id-preview'),
@@ -161,8 +163,14 @@ export function createForms(callbacks) {
       : '';
   }
 
+  function updateKindVisibility(type, selected) {
+    els.nodeKindWrap.hidden = type !== 'claim';
+    els.nodeKind.value = selected ?? 'empirical';
+  }
+
   els.nodeType.addEventListener('change', () => {
     fillStatusSelect(els.nodeType.value);
+    updateKindVisibility(els.nodeType.value);
     updateIdPreview();
   });
   els.nodeLabel.addEventListener('input', updateIdPreview);
@@ -177,6 +185,7 @@ export function createForms(callbacks) {
     els.nodeType.title = node ? 'Type cannot change; delete and recreate instead' : '';
     els.nodeLabel.value = node?.label ?? '';
     fillStatusSelect(els.nodeType.value, node?.status);
+    updateKindVisibility(els.nodeType.value, node?.kind);
     els.fieldRows.replaceChildren();
     for (const [name, value] of Object.entries(node?.fields ?? {})) {
       addFieldRow(name, value);
@@ -194,12 +203,14 @@ export function createForms(callbacks) {
       return;
     }
     const status = els.nodeStatusWrap.hidden ? '' : els.nodeStatus.value;
+    const kind = els.nodeKindWrap.hidden ? undefined : els.nodeKind.value;
     const fields = collectFields();
     if (editingNode) {
-      callbacks.onUpdateNode(editingNode.id, { label, status, fields });
+      callbacks.onUpdateNode(editingNode.id, { label, status, kind, fields });
     } else {
       const type = els.nodeType.value;
       const node = { id: uniqueNodeId(type, label, knownIds), type, label };
+      if (kind) node.kind = kind;
       if (status) node.status = status;
       if (fields) node.fields = fields;
       callbacks.onCreateNode(node);

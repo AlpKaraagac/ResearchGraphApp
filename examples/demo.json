@@ -69,7 +69,9 @@
         "Citation": "Psychological Review, 102(2), 246–268",
         "Type": "article-journal"
       },
-      "meta": { "doi": "10.1037/0033-295X.102.2.246" }
+      "meta": {
+        "doi": "10.1037/0033-295X.102.2.246"
+      }
     },
     {
       "id": "src-preprint",
@@ -90,7 +92,9 @@
         "Citation": "Journal of Personality and Social Psychology, 113(4), 513–529",
         "Type": "article-journal"
       },
-      "meta": { "doi": "10.1037/pspa0000090" }
+      "meta": {
+        "doi": "10.1037/pspa0000090"
+      }
     },
     {
       "id": "st-decomp",
@@ -158,18 +162,21 @@
     {
       "id": "claim-perceiver",
       "type": "claim",
+      "kind": "empirical",
       "label": "About a third of the reaction is the perceiver, not the face",
       "status": "provisional"
     },
     {
       "id": "claim-stable",
       "type": "claim",
+      "kind": "empirical",
       "label": "Perceiver effects generalize across stimulus sets",
       "status": "established"
     },
     {
       "id": "claim-limits",
       "type": "claim",
+      "kind": "empirical",
       "label": "Every null here is a limit on what was visible",
       "status": "provisional"
     },
@@ -192,34 +199,150 @@
     }
   ],
   "edges": [
-    { "from": "gap-decomp", "relation": "motivates", "to": "q-perceiver" },
-    { "from": "gap-stability", "relation": "motivates", "to": "q-stability" },
-    { "from": "q-situation", "relation": "asks", "to": "q-perceiver" },
-    { "from": "st-decomp", "relation": "addresses", "to": "q-perceiver" },
-    { "from": "st-stimuli", "relation": "addresses", "to": "q-situation" },
-    { "from": "st-stimuli", "relation": "addresses", "to": "q-stability" },
-    { "from": "m-decomp", "relation": "uses", "to": "st-decomp" },
-    { "from": "m-bootstrap", "relation": "uses", "to": "st-decomp" },
-    { "from": "mat-faces", "relation": "uses", "to": "st-decomp" },
-    { "from": "mat-panel", "relation": "uses", "to": "st-decomp" },
-    { "from": "mat-faces", "relation": "uses", "to": "st-stimuli" },
-    { "from": "f-perceiver-var", "relation": "yields", "to": "st-decomp" },
-    { "from": "f-null-situation", "relation": "yields", "to": "st-decomp" },
-    { "from": "f-sealed", "relation": "yields", "to": "st-decomp" },
-    { "from": "f-perceiver-var", "relation": "supports", "to": "claim-perceiver" },
-    { "from": "f-sealed", "relation": "supports", "to": "claim-stable" },
-    { "from": "f-null-situation", "relation": "bounds", "to": "q-stability" },
-    { "from": "claim-perceiver", "relation": "answers", "to": "q-perceiver" },
-    { "from": "src-kenny", "relation": "grounds", "to": "con-perceiver" },
-    { "from": "src-kenny", "relation": "grounds", "to": "con-exchange" },
-    { "from": "src-kenny", "relation": "grounds", "to": "gap-decomp" },
-    { "from": "src-mischel", "relation": "grounds", "to": "con-caps" },
-    { "from": "src-preprint", "relation": "grounds", "to": "claim-perceiver" },
-    { "from": "src-hehman", "relation": "threatens", "to": "claim-stable" },
-    { "from": "src-hehman", "relation": "inspires", "to": "st-stimuli" },
-    { "from": "src-kenny", "relation": "inspires", "to": "m-decomp" },
-    { "from": "note-limits", "relation": "qualifies", "to": "claim-limits" },
-    { "from": "task-verify", "relation": "blocks", "to": "src-preprint" },
-    { "from": "task-wave2", "relation": "blocks", "to": "f-sealed" }
+    {
+      "from": "gap-decomp",
+      "relation": "motivates",
+      "to": "q-perceiver"
+    },
+    {
+      "from": "gap-stability",
+      "relation": "motivates",
+      "to": "q-stability"
+    },
+    {
+      "from": "q-situation",
+      "relation": "asks",
+      "to": "q-perceiver"
+    },
+    {
+      "from": "st-decomp",
+      "relation": "addresses",
+      "to": "q-perceiver"
+    },
+    {
+      "from": "st-stimuli",
+      "relation": "addresses",
+      "to": "q-situation"
+    },
+    {
+      "from": "st-stimuli",
+      "relation": "addresses",
+      "to": "q-stability"
+    },
+    {
+      "from": "m-decomp",
+      "relation": "uses",
+      "to": "st-decomp"
+    },
+    {
+      "from": "m-bootstrap",
+      "relation": "uses",
+      "to": "st-decomp"
+    },
+    {
+      "from": "mat-faces",
+      "relation": "uses",
+      "to": "st-decomp"
+    },
+    {
+      "from": "mat-panel",
+      "relation": "uses",
+      "to": "st-decomp"
+    },
+    {
+      "from": "mat-faces",
+      "relation": "uses",
+      "to": "st-stimuli"
+    },
+    {
+      "from": "f-perceiver-var",
+      "relation": "yields",
+      "to": "st-decomp"
+    },
+    {
+      "from": "f-null-situation",
+      "relation": "yields",
+      "to": "st-decomp"
+    },
+    {
+      "from": "f-sealed",
+      "relation": "yields",
+      "to": "st-decomp"
+    },
+    {
+      "from": "f-perceiver-var",
+      "relation": "supports",
+      "to": "claim-perceiver"
+    },
+    {
+      "from": "f-sealed",
+      "relation": "supports",
+      "to": "claim-stable"
+    },
+    {
+      "from": "f-null-situation",
+      "relation": "bounds",
+      "to": "q-stability"
+    },
+    {
+      "from": "claim-perceiver",
+      "relation": "answers",
+      "to": "q-perceiver"
+    },
+    {
+      "from": "src-kenny",
+      "relation": "grounds",
+      "to": "con-perceiver"
+    },
+    {
+      "from": "src-kenny",
+      "relation": "grounds",
+      "to": "con-exchange"
+    },
+    {
+      "from": "src-kenny",
+      "relation": "grounds",
+      "to": "gap-decomp"
+    },
+    {
+      "from": "src-mischel",
+      "relation": "grounds",
+      "to": "con-caps"
+    },
+    {
+      "from": "src-preprint",
+      "relation": "grounds",
+      "to": "claim-perceiver"
+    },
+    {
+      "from": "src-hehman",
+      "relation": "threatens",
+      "to": "claim-stable"
+    },
+    {
+      "from": "src-hehman",
+      "relation": "inspires",
+      "to": "st-stimuli"
+    },
+    {
+      "from": "src-kenny",
+      "relation": "inspires",
+      "to": "m-decomp"
+    },
+    {
+      "from": "note-limits",
+      "relation": "qualifies",
+      "to": "claim-limits"
+    },
+    {
+      "from": "task-verify",
+      "relation": "blocks",
+      "to": "src-preprint"
+    },
+    {
+      "from": "task-wave2",
+      "relation": "blocks",
+      "to": "f-sealed"
+    }
   ]
 }

@@ -13,7 +13,10 @@
     <h1 id="graph-title">Research graph</h1>
     <span id="save-indicator" aria-live="polite"></span>
     <span class="spacer"></span>
-    <button id="lint-btn" type="button" class="bar-btn">Lint <span id="lint-badge" class="badge">0</span></button>
+    <button id="lint-btn" type="button" class="bar-btn">Lint
+      <span id="lint-errors" class="badge">0</span>
+      <span id="lint-warnings" class="badge warn">0</span>
+    </button>
     <button id="share-btn" type="button" class="bar-btn">Share</button>
     <div class="view-controls" role="group" aria-label="View controls">
       <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
@@ -89,6 +92,12 @@
     </label>
     <label class="field" id="node-status-wrap">Status
       <select id="node-status"></select>
+    </label>
+    <label class="field" id="node-kind-wrap" hidden>Kind
+      <select id="node-kind">
+        <option value="empirical">empirical — rests on findings</option>
+        <option value="argued">argued — rests on sources and reasoning</option>
+      </select>
     </label>
     <fieldset class="fields-editor">
       <legend>Fields</legend>

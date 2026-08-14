@@ -206,6 +206,8 @@ export function createRenderer(ui, callbacks) {
 
 // ---- lint panel ------------------------------------------------------------
 
+// Errors and warnings are separate lists with separate counts — blending
+// them means the error count is never zero and stops meaning anything.
 export function renderLintPanel(ui, findings, callbacks) {
   ui.lintList.replaceChildren();
   if (findings.length === 0) {
@@ -215,24 +217,35 @@ export function renderLintPanel(ui, findings, callbacks) {
     ui.lintList.append(p);
     return;
   }
-  for (const rule of LINT_RULES) {
-    const matches = findings.filter((f) => f.rule === rule.rule);
-    if (matches.length === 0) continue;
+  for (const severity of ['error', 'warning']) {
+    const inSeverity = findings.filter((f) => f.severity === severity);
+    if (inSeverity.length === 0) continue;
 
-    const heading = document.createElement('h3');
-    heading.textContent = `${rule.title} · ${matches.length}`;
-    const desc = document.createElement('p');
-    desc.className = 'rule-desc';
-    desc.textContent = rule.description;
-    ui.lintList.append(heading, desc);
+    const header = document.createElement('h3');
+    header.className = `lint-severity ${severity}s`;
+    header.textContent = `${severity === 'error' ? 'Errors' : 'Warnings'} · ${inSeverity.length}`;
+    ui.lintList.append(header);
 
-    for (const finding of matches) {
-      const row = document.createElement('button');
-      row.type = 'button';
-      row.className = 'lint-row';
-      row.textContent = finding.message;
-      row.addEventListener('click', () => callbacks.onJump(finding.nodeId));
-      ui.lintList.append(row);
+    for (const rule of LINT_RULES) {
+      if (rule.severity !== severity) continue;
+      const matches = inSeverity.filter((f) => f.id === rule.id);
+      if (matches.length === 0) continue;
+
+      const heading = document.createElement('h3');
+      heading.textContent = `${rule.title} · ${matches.length}`;
+      const desc = document.createElement('p');
+      desc.className = 'rule-desc';
+      desc.textContent = rule.description;
+      ui.lintList.append(heading, desc);
+
+      for (const finding of matches) {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'lint-row';
+        row.textContent = finding.message;
+        row.addEventListener('click', () => callbacks.onJump(finding.nodeId));
+        ui.lintList.append(row);
+      }
     }
   }
 }

@@ -3,7 +3,7 @@
 // the graph, patch the render incrementally, and save — the graph in
 // localStorage is never allowed to drift from what is on screen.
 
-import { NODE_TYPES, validateGraph, edgeKey } from './schema.js';
+import { NODE_TYPES, validateGraph, upgradeGraph, edgeKey } from './schema.js';
 import { lint } from './lint.js';
 import { createLayout } from './layout.js';
 import { createView } from './view.js';
@@ -39,7 +39,8 @@ const ui = {
   detailId: $('detail-id'),
   lintPanel: $('lint-panel'),
   lintList: $('lint-list'),
-  lintBadge: $('lint-badge'),
+  lintErrors: $('lint-errors'),
+  lintWarnings: $('lint-warnings'),
   shareDialog: $('share-dialog'),
   shareInfo: $('share-info'),
   shareError: $('share-error'),
@@ -206,8 +207,12 @@ function jumpToFinding(nodeId) {
 
 function refreshLint() {
   state.lint = lint(state.graph);
-  ui.lintBadge.textContent = String(state.lint.length);
-  ui.lintBadge.classList.toggle('clean', state.lint.length === 0);
+  const errors = state.lint.filter((f) => f.severity === 'error').length;
+  const warnings = state.lint.length - errors;
+  ui.lintErrors.textContent = String(errors);
+  ui.lintErrors.classList.toggle('clean', errors === 0);
+  ui.lintWarnings.textContent = String(warnings);
+  ui.lintWarnings.classList.toggle('clean', warnings === 0);
   if (!ui.lintPanel.hidden) {
     renderLintPanel(ui, state.lint, { onJump: jumpToFinding });
   }
@@ -244,6 +249,7 @@ const forms = createForms({
     const node = nodeById(id);
     if (!node) return;
     node.label = patch.label;
+    if (patch.kind && node.type === 'claim') node.kind = patch.kind;
     if (patch.status) node.status = patch.status;
     else delete node.status;
     if (patch.fields) node.fields = patch.fields;
@@ -653,13 +659,13 @@ async function loadInitialGraph() {
   if (embeddedEl) {
     let embedded = null;
     try {
-      embedded = JSON.parse(embeddedEl.textContent);
+      embedded = upgradeGraph(JSON.parse(embeddedEl.textContent));
     } catch { /* falls through to the error below */ }
     if (!embedded || validateGraph(embedded).length > 0) {
       showEmpty('The graph embedded in this file is invalid.');
       return;
     }
-    const stored = store.load(embedded.meta?.id);
+    const stored = upgradeGraph(store.load(embedded.meta?.id));
     const storedIsNewer = stored
       && validateGraph(stored).length === 0
       && (stored.meta?.modified ?? '') > (embedded.meta?.modified ?? '');
@@ -668,7 +674,7 @@ async function loadInitialGraph() {
     return;
   }
 
-  const saved = store.loadCurrent();
+  const saved = upgradeGraph(store.loadCurrent());
   if (saved) {
     const errors = validateGraph(saved);
     if (errors.length === 0) {
@@ -682,7 +688,7 @@ async function loadInitialGraph() {
   try {
     const response = await fetch('examples/demo.json');
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const graph = await response.json();
+    const graph = upgradeGraph(await response.json());
     const errors = validateGraph(graph);
     if (errors.length > 0) {
       showEmpty(`The example graph is invalid: ${errors[0]}`);

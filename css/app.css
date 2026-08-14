@@ -115,6 +115,18 @@ button {
   text-align: center;
 }
 .badge.clean { background: #1a7f37; }
+.badge.warn { background: #b07908; }
+.badge.warn.clean { background: #1a7f37; }
+
+#lint-list .lint-severity {
+  margin: 14px 0 2px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+#lint-list .lint-severity.errors { color: #8f1d1d; }
+#lint-list .lint-severity.warnings { color: #7a4d07; }
 
 #search {
   flex: 1;

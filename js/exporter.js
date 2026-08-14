@@ -4,7 +4,7 @@
 // .canvas exports round-trip losslessly via the rgNode/rgGraph extra
 // properties the spec tolerates; foreign canvases import best-effort.
 
-import { validateGraph, relationAllows, edgeKey } from './schema.js';
+import { validateGraph, upgradeGraph, relationAllows, edgeKey } from './schema.js';
 import { looksLikeOldMap, migrateOldMap } from './migrate.js';
 
 export function download(filename, text, mime = 'application/json') {
@@ -188,6 +188,7 @@ export function importText(text) {
   }
   if (looksLikeCanvas(json)) {
     const { graph, report } = fromCanvas(json);
+    upgradeGraph(graph);
     const errors = validateGraph(graph);
     if (errors.length > 0) {
       return { ok: false, message: `Canvas import failed:\n${errors.slice(0, 5).join('\n')}` };
@@ -203,6 +204,7 @@ export function importText(text) {
       message: `Imported ${graph.nodes.length} nodes and ${graph.edges.length} edges from JSON Canvas.${notes ? ` ${notes}` : ''}`,
     };
   }
+  upgradeGraph(json);
   const errors = validateGraph(json);
   if (errors.length > 0) {
     const shown = errors.slice(0, 5).join('\n');
