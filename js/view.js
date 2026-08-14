@@ -143,13 +143,21 @@ export function createView(canvas, viewport) {
     animation = requestAnimationFrame(frame);
   }
 
+  function toWorld(screenX, screenY) {
+    return { x: (screenX - tx) / scale, y: (screenY - ty) / scale };
+  }
+
   return {
     get scale() { return scale; },
     zoomIn() { zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, 1.35); },
     zoomOut() { zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, 1 / 1.35); },
+    toWorld,
+    worldCenter() { return toWorld(canvas.clientWidth / 2, canvas.clientHeight / 2); },
 
-    // bounds: { minX, minY, maxX, maxY } in world coordinates
-    fit(bounds, pad = 48) {
+    // bounds: { minX, minY, maxX, maxY } in world coordinates.
+    // animate: false jumps immediately — used on load, where there is no
+    // meaningful prior view to ease from.
+    fit(bounds, { pad = 48, animate = true } = {}) {
       const w = bounds.maxX - bounds.minX;
       const h = bounds.maxY - bounds.minY;
       if (w <= 0 || h <= 0) {
@@ -162,7 +170,8 @@ export function createView(canvas, viewport) {
         1.1,
       );
       const clamped = Math.min(SCALE_MAX, Math.max(SCALE_MIN, s));
-      animateTo(
+      const go = animate ? animateTo : setTransform;
+      go(
         (canvas.clientWidth - w * clamped) / 2 - bounds.minX * clamped,
         (canvas.clientHeight - h * clamped) / 2 - bounds.minY * clamped,
         clamped,

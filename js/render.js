@@ -1,5 +1,7 @@
 // DOM rendering: node cards in an HTML layer, edges in an SVG layer beneath
-// them, and the detail panel. Pure rendering — state lives in app.js.
+// them, and the detail panel. Pure rendering — state lives in app.js. The
+// incremental add/update/remove methods exist so edits never force a full
+// rebuild (which would re-run layout and destroy the user's mental map).
 
 import { edgeKey } from './schema.js';
 
@@ -35,6 +37,78 @@ export function createRenderer(ui, callbacks) {
   const lines = new Map(); // edge key → { line, label, edge }
   const sizes = new Map(); // node id → { w, h }
 
+  function fillCard(card, node) {
+    card.className = `node type-${node.type}`;
+    card.dataset.id = node.id;
+    card.replaceChildren();
+
+    const type = document.createElement('span');
+    type.className = 'node-type';
+    type.textContent = node.type;
+    card.append(type);
+
+    const label = document.createElement('span');
+    label.className = 'node-label';
+    label.textContent = node.label;
+    card.append(label);
+
+    if (node.status) card.append(makeStatusPill(node.status));
+
+    card.setAttribute('aria-label',
+      `${node.type}: ${node.label}${node.status ? `, ${node.status}` : ''}`);
+  }
+
+  function measure(id) {
+    const card = cards.get(id);
+    sizes.set(id, { w: card.offsetWidth, h: card.offsetHeight });
+  }
+
+  function addNode(node) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    fillCard(card, node);
+    card.addEventListener('click', () => callbacks.onSelect(node.id));
+    ui.nodeLayer.append(card);
+    cards.set(node.id, card);
+    measure(node.id);
+  }
+
+  function updateNode(node) {
+    const card = cards.get(node.id);
+    if (!card) return;
+    fillCard(card, node);
+    measure(node.id);
+  }
+
+  function removeNode(id) {
+    cards.get(id)?.remove();
+    cards.delete(id);
+    sizes.delete(id);
+  }
+
+  function addEdge(edge) {
+    if (!cards.has(edge.from) || !cards.has(edge.to)) return;
+    const line = document.createElementNS(SVG_NS, 'line');
+    line.setAttribute('class', 'edge');
+    line.setAttribute('marker-end', 'url(#arrow)');
+    ui.edgeLines.append(line);
+
+    const label = document.createElementNS(SVG_NS, 'text');
+    label.setAttribute('class', 'edge-label');
+    label.textContent = edge.relation;
+    ui.edgeLabels.append(label);
+
+    lines.set(edgeKey(edge), { line, label, edge });
+  }
+
+  function removeEdge(key) {
+    const entry = lines.get(key);
+    if (!entry) return;
+    entry.line.remove();
+    entry.label.remove();
+    lines.delete(key);
+  }
+
   function build(graph) {
     cards.clear();
     lines.clear();
@@ -42,51 +116,8 @@ export function createRenderer(ui, callbacks) {
     ui.nodeLayer.replaceChildren();
     ui.edgeLines.replaceChildren();
     ui.edgeLabels.replaceChildren();
-
-    for (const node of graph.nodes) {
-      const card = document.createElement('button');
-      card.type = 'button';
-      card.className = `node type-${node.type}`;
-      card.dataset.id = node.id;
-
-      const type = document.createElement('span');
-      type.className = 'node-type';
-      type.textContent = node.type;
-      card.append(type);
-
-      const label = document.createElement('span');
-      label.className = 'node-label';
-      label.textContent = node.label;
-      card.append(label);
-
-      if (node.status) card.append(makeStatusPill(node.status));
-
-      card.setAttribute('aria-label',
-        `${node.type}: ${node.label}${node.status ? `, ${node.status}` : ''}`);
-      card.addEventListener('click', () => callbacks.onSelect(node.id));
-      ui.nodeLayer.append(card);
-      cards.set(node.id, card);
-    }
-
-    for (const edge of graph.edges) {
-      if (!cards.has(edge.from) || !cards.has(edge.to)) continue;
-      const line = document.createElementNS(SVG_NS, 'line');
-      line.setAttribute('class', 'edge');
-      line.setAttribute('marker-end', 'url(#arrow)');
-      ui.edgeLines.append(line);
-
-      const label = document.createElementNS(SVG_NS, 'text');
-      label.setAttribute('class', 'edge-label');
-      label.textContent = edge.relation;
-      ui.edgeLabels.append(label);
-
-      lines.set(edgeKey(edge), { line, label, edge });
-    }
-
-    // one reflow, then cached; card size doesn't depend on position
-    for (const [id, card] of cards) {
-      sizes.set(id, { w: card.offsetWidth, h: card.offsetHeight });
-    }
+    for (const node of graph.nodes) addNode(node);
+    for (const edge of graph.edges) addEdge(edge);
   }
 
   // Point on the segment from → to where it crosses the padded card
@@ -144,6 +175,7 @@ export function createRenderer(ui, callbacks) {
     const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
     for (const [id, card] of cards) {
       const node = nodeById.get(id);
+      if (!node) continue;
       card.classList.toggle('is-hidden', visibility.isHidden(node));
       card.classList.toggle('is-dim', !visibility.isHidden(node) && visibility.isDim(node));
       card.classList.toggle('is-selected', id === visibility.selectedId);
@@ -153,6 +185,7 @@ export function createRenderer(ui, callbacks) {
     for (const { line, label, edge } of lines.values()) {
       const from = nodeById.get(edge.from);
       const to = nodeById.get(edge.to);
+      if (!from || !to) continue;
       const hidden = visibility.isHidden(from) || visibility.isHidden(to);
       const dim = !hidden && (visibility.isDim(from) || visibility.isDim(to));
       const active = !hidden && !dim && visibility.isEdgeActive(edge);
@@ -164,7 +197,10 @@ export function createRenderer(ui, callbacks) {
     }
   }
 
-  return { build, position, bounds, setState, sizes };
+  return {
+    build, position, bounds, setState, sizes,
+    addNode, updateNode, removeNode, addEdge, removeEdge,
+  };
 }
 
 // ---- detail panel ----------------------------------------------------------
@@ -220,9 +256,12 @@ export function renderPanel(ui, graph, nodeId, callbacks) {
     for (const edge of edges) {
       const other = nodeById.get(otherEnd(edge));
       if (!other) continue;
-      const row = document.createElement('button');
-      row.type = 'button';
+      const row = document.createElement('div');
       row.className = `rel-row type-${other.type}`;
+
+      const follow = document.createElement('button');
+      follow.type = 'button';
+      follow.className = 'rel-follow';
 
       const name = document.createElement('span');
       name.className = 'rel-name';
@@ -235,8 +274,20 @@ export function renderPanel(ui, graph, nodeId, callbacks) {
       target.className = 'rel-target';
       target.textContent = other.label;
 
-      row.append(name, dot, target);
-      row.addEventListener('click', () => callbacks.onFollow(other.id));
+      follow.append(name, dot, target);
+      follow.addEventListener('click', () => callbacks.onFollow(other.id));
+      row.append(follow);
+
+      if (callbacks.onDeleteEdge) {
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'rel-del';
+        del.textContent = '×';
+        del.setAttribute('aria-label',
+          `Delete edge: ${edge.relation} ${other.label}`);
+        del.addEventListener('click', () => callbacks.onDeleteEdge(edge));
+        row.append(del);
+      }
       list.append(row);
     }
   };
