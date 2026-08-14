@@ -35,6 +35,7 @@ import {
 } from './js/schema.js';
 import { LINT_RULES, lint } from './js/lint.js';
 import { ID_PREFIXES, slugify, uniqueNodeId, directedRelationOptions } from './js/forms.js';
+import { toCanvas, fromCanvas, looksLikeCanvas } from './js/exporter.js';
 
 // ---- harness -------------------------------------------------------------
 
@@ -595,6 +596,73 @@ test('directedRelationOptions offers only schema-legal relations, both direction
   ]);
   // note → anything, and anything can be qualified by a note
   assertDeepEqual(directedRelationOptions('note', 'note').map((o) => o.direction), ['out', 'in']);
+});
+
+// ---- JSON Canvas export/import -------------------------------------------
+
+describe('JSON Canvas');
+
+const canvasGraph = {
+  version: 1,
+  meta: { id: 'demo', title: 'Demo' },
+  nodes: [
+    { id: 'f1', type: 'finding', label: 'A finding', status: 'supported', x: 100, y: 50,
+      fields: { Statistic: 'p < .01' } },
+    { id: 'c1', type: 'claim', label: 'A claim', status: 'provisional', x: 300, y: 50 },
+  ],
+  edges: [{ from: 'f1', relation: 'supports', to: 'c1' }],
+};
+
+test('toCanvas maps centres to top-left corners and labels edges with relations', () => {
+  const canvas = toCanvas(canvasGraph, new Map([['f1', { w: 100, h: 40 }]]));
+  assertEqual(canvas.nodes[0].x, 50, 'x = centre − width/2');
+  assertEqual(canvas.nodes[0].y, 30, 'y = centre − height/2');
+  assertEqual(canvas.nodes[0].type, 'text');
+  assert(canvas.nodes[0].text.includes('A finding'));
+  assertEqual(canvas.edges[0].fromNode, 'f1');
+  assertEqual(canvas.edges[0].toNode, 'c1');
+  assertEqual(canvas.edges[0].label, 'supports');
+  assertEqual(canvas.rgGraph.meta.id, 'demo');
+});
+
+test('our own .canvas round-trips losslessly through rgNode', () => {
+  const { graph, report } = fromCanvas(toCanvas(canvasGraph));
+  assertDeepEqual(graph.nodes, canvasGraph.nodes);
+  assertDeepEqual(graph.edges, canvasGraph.edges);
+  assertDeepEqual(graph.meta, canvasGraph.meta);
+  assertEqual(report.foreignNodes, 0);
+  assertEqual(report.droppedEdges.length, 0);
+  assertDeepEqual(validateGraph(graph), []);
+});
+
+test('foreign canvas nodes become notes; unlabelled or off-schema edges are dropped and reported', () => {
+  const foreign = {
+    nodes: [
+      { id: 'a', type: 'text', text: 'Just an idea\nwith details', x: 0, y: 0, width: 200, height: 60 },
+      { id: 'b', type: 'file', file: 'papers/kenny.pdf', x: 300, y: 0, width: 200, height: 60 },
+    ],
+    edges: [
+      { id: 'e1', fromNode: 'a', toNode: 'b' },
+      { id: 'e2', fromNode: 'a', toNode: 'b', label: 'qualifies' },
+      { id: 'e3', fromNode: 'a', toNode: 'ghost', label: 'qualifies' },
+    ],
+  };
+  const { graph, report } = fromCanvas(foreign);
+  assertDeepEqual(graph.nodes.map((n) => n.type), ['note', 'note']);
+  assertEqual(graph.nodes[0].label, 'Just an idea', 'first line becomes the label');
+  assertEqual(graph.nodes[0].x, 100, 'centre derived from x + width/2');
+  assertDeepEqual(graph.edges, [{ from: 'a', relation: 'qualifies', to: 'b' }],
+    'note → note qualifies survives because the schema allows it');
+  assertEqual(report.droppedEdges.length, 2, 'the unlabelled and dangling edges are reported');
+  assertDeepEqual(validateGraph(graph), []);
+});
+
+test('looksLikeCanvas tells the two formats apart', () => {
+  assert(looksLikeCanvas(toCanvas(canvasGraph)));
+  assert(looksLikeCanvas({ nodes: [{ id: 'a', type: 'text', text: 'x', x: 0, y: 0, width: 10, height: 10 }] }));
+  assert(!looksLikeCanvas(canvasGraph), 'a graph is not a canvas');
+  assert(!looksLikeCanvas({ nodes: [] }));
+  assert(!looksLikeCanvas(null));
 });
 
 // ---- render --------------------------------------------------------------
