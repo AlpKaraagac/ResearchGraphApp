@@ -1,9 +1,8 @@
 // Force-directed layout with no dependencies and no randomness: nodes start
 // on a golden-angle spiral (deterministic, well spread), then pairwise
-// repulsion, springs along edges, soft rectangle-ish collision and a weak
-// centring pull settle them. The caller chooses whether to animate the
-// settling (step a few ticks per frame) or run it to completion synchronously
-// for prefers-reduced-motion.
+// repulsion, springs along edges, soft collision and a weak centring pull
+// settle them. settle() runs to completion synchronously — the same graph
+// always produces the same arrangement.
 
 const GOLDEN_ANGLE = 2.399963229728653;
 const SPIRAL_SPACING = 110;
@@ -91,13 +90,6 @@ export function createLayout(ids, edges, { radii } = {}) {
   }
 
   return {
-    get running() {
-      return alpha > 0;
-    },
-    step(ticks = 1) {
-      for (let t = 0; t < ticks && alpha > 0; t++) tick();
-      return alpha > 0;
-    },
     settle() {
       let guard = 2000;
       while (alpha > 0 && guard-- > 0) tick();
