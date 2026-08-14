@@ -11,12 +11,17 @@
 <header id="toolbar">
   <div class="bar">
     <h1 id="graph-title">Research graph</h1>
-    <input id="search" type="search" placeholder="Search nodes…" aria-label="Search nodes" autocomplete="off">
+    <span id="save-indicator" aria-live="polite"></span>
+    <span class="spacer"></span>
+    <button id="json-btn" type="button">JSON</button>
     <div class="view-controls" role="group" aria-label="View controls">
       <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
       <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
       <button id="fit" type="button">Fit</button>
     </div>
+  </div>
+  <div class="bar">
+    <input id="search" type="search" placeholder="Search nodes…" aria-label="Search nodes" autocomplete="off">
   </div>
   <div id="type-filters" role="group" aria-label="Filter by node type"></div>
 </header>
@@ -37,6 +42,7 @@
   <div id="empty-state" hidden>
     <p id="empty-message"></p>
   </div>
+  <button id="add-node-btn" type="button" aria-label="Add node">＋</button>
   <aside id="detail" hidden aria-label="Node details">
     <div class="sheet-handle" aria-hidden="true"></div>
     <header class="detail-head">
@@ -45,6 +51,11 @@
       <button id="detail-close" type="button" aria-label="Close details">×</button>
     </header>
     <h2 id="detail-label"></h2>
+    <div class="panel-actions">
+      <button id="detail-add-edge" type="button">＋ Relation</button>
+      <button id="detail-edit" type="button">Edit</button>
+      <button id="detail-delete" type="button" class="danger">Delete</button>
+    </div>
     <dl id="detail-fields"></dl>
     <section id="detail-outgoing" hidden>
       <h3>Outgoing</h3>
@@ -57,6 +68,73 @@
     <p id="detail-id" class="detail-id"></p>
   </aside>
 </main>
+
+<dialog id="node-dialog" class="dialog-full">
+  <form id="node-form">
+    <h2 id="node-dialog-title">Add node</h2>
+    <label class="field">Type
+      <select id="node-type"></select>
+    </label>
+    <label class="field">Label
+      <textarea id="node-label" rows="3" required></textarea>
+    </label>
+    <label class="field" id="node-status-wrap">Status
+      <select id="node-status"></select>
+    </label>
+    <fieldset class="fields-editor">
+      <legend>Fields</legend>
+      <div id="field-rows"></div>
+      <button type="button" id="add-field-row">＋ Add field</button>
+    </fieldset>
+    <p id="node-id-preview" class="hint"></p>
+    <p id="node-error" class="form-error" hidden></p>
+    <div class="dialog-actions">
+      <button type="button" data-close>Cancel</button>
+      <button type="submit" class="primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="edge-dialog">
+  <form id="edge-form">
+    <h2>Add relation</h2>
+    <p id="edge-source" class="hint"></p>
+    <label class="field">With node
+      <select id="edge-other"></select>
+    </label>
+    <label class="field">Relation
+      <select id="edge-relation"></select>
+    </label>
+    <p id="edge-error" class="form-error" hidden></p>
+    <div class="dialog-actions">
+      <button type="button" data-close>Cancel</button>
+      <button type="submit" class="primary">Add</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="confirm-dialog">
+  <h2 id="confirm-title"></h2>
+  <div id="confirm-body"></div>
+  <div class="dialog-actions">
+    <button type="button" data-close>Cancel</button>
+    <button type="button" id="confirm-ok" class="primary danger">Delete</button>
+  </div>
+</dialog>
+
+<dialog id="json-dialog" class="dialog-full">
+  <form id="json-form">
+    <h2>Graph JSON</h2>
+    <textarea id="json-text" spellcheck="false" autocapitalize="off" autocomplete="off"
+              aria-label="Graph JSON"></textarea>
+    <p id="json-error" class="form-error" hidden></p>
+    <div class="dialog-actions">
+      <button type="button" data-close>Cancel</button>
+      <button type="submit" class="primary">Apply</button>
+    </div>
+  </form>
+</dialog>
+
 <script type="module" src="js/app.js"></script>
 </body>
 </html>

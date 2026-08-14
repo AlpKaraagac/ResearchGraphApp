@@ -74,10 +74,32 @@ button {
   font-size: 14px;
   font-weight: 650;
   margin: 0;
-  max-width: 30vw;
+  max-width: 42vw;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.spacer { flex: 1; }
+
+#save-indicator {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+#save-indicator.err {
+  color: #8f1d1d;
+  font-weight: 700;
+}
+
+#json-btn {
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 12.5px;
+  cursor: pointer;
 }
 
 #search {
@@ -294,6 +316,27 @@ button {
 /* the explicit display would otherwise override the hidden attribute,
    leaving an invisible full-canvas overlay that eats every click */
 #empty-state[hidden] { display: none; }
+#empty-state { pointer-events: none; }
+
+/* ---- add-node button --------------------------------------------------- */
+
+#add-node-btn {
+  position: absolute;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  z-index: 5;
+  width: 56px;
+  height: 56px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgb(59 91 219 / 0.4);
+}
+#add-node-btn:active { transform: scale(0.96); }
 
 /* ---- detail panel: bottom sheet by default ----------------------------- */
 
@@ -375,6 +418,23 @@ button {
   color: var(--muted);
 }
 
+.panel-actions {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 10px;
+}
+.panel-actions button {
+  flex: 1;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.panel-actions button:active { background: var(--bg); }
+button.danger { color: #8f1d1d; border-color: #e0b4b4; }
+
 .rel-list {
   display: flex;
   flex-direction: column;
@@ -383,18 +443,27 @@ button {
 
 .rel-row {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-height: 42px;
-  padding: 5px 8px;
+  align-items: stretch;
   border: 1px solid var(--line);
   border-radius: 9px;
   background: var(--surface);
+}
+
+.rel-follow {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  min-width: 0;
+  padding: 5px 8px;
+  border: none;
+  background: none;
   cursor: pointer;
   text-align: left;
+  border-radius: 9px 0 0 9px;
 }
-.rel-row:active { background: var(--bg); }
+.rel-follow:active { background: var(--bg); }
 
 .rel-row .rel-name {
   flex: none;
@@ -416,6 +485,19 @@ button {
   font-size: 12.5px;
   line-height: 1.25;
 }
+
+.rel-del {
+  flex: none;
+  width: 40px;
+  border: none;
+  border-left: 1px solid var(--line);
+  border-radius: 0 9px 9px 0;
+  background: none;
+  color: var(--muted);
+  font-size: 17px;
+  cursor: pointer;
+}
+.rel-del:active { background: var(--bg); color: #8f1d1d; }
 
 .detail-id {
   margin: 12px 0 0;
@@ -444,6 +526,178 @@ button {
     padding: 4px 16px 14px;
   }
   .sheet-handle { display: none; }
+}
+
+/* ---- dialogs ----------------------------------------------------------- */
+
+dialog {
+  border: none;
+  border-radius: 14px;
+  padding: 18px;
+  width: min(480px, calc(100vw - 32px));
+  max-height: min(85dvh, 640px);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 12px 40px rgb(27 28 32 / 0.25);
+}
+dialog::backdrop { background: rgb(27 28 32 / 0.4); }
+
+dialog h2 {
+  margin: 0 0 12px;
+  font-size: 17px;
+}
+
+dialog form { display: flex; flex-direction: column; }
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.field select,
+.field textarea,
+.field input,
+.field-row input {
+  font: inherit;
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--ink);
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  min-height: 42px;
+}
+.field textarea { resize: vertical; }
+
+.fields-editor {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px 10px;
+  margin: 0 0 12px;
+}
+.fields-editor legend {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 0 4px;
+}
+.field-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.field-row input { flex: 1; min-width: 0; }
+.field-row .row-remove {
+  flex: none;
+  width: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 16px;
+  cursor: pointer;
+}
+#add-field-row {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.hint {
+  margin: 0 0 10px;
+  font-size: 11.5px;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow-wrap: anywhere;
+}
+
+.form-error {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #ffdcdc;
+  color: #8f1d1d;
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+.dialog-actions button {
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  font-size: 14px;
+  cursor: pointer;
+}
+.dialog-actions .primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.dialog-actions .primary.danger {
+  background: #c22929;
+  border-color: #c22929;
+  color: #fff;
+}
+
+#confirm-body { font-size: 13.5px; }
+#confirm-body ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+#confirm-body li { margin-bottom: 3px; }
+
+#json-text {
+  flex: 1;
+  min-height: 40dvh;
+  font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  margin: 0 0 10px;
+  resize: none;
+  white-space: pre;
+  overflow: auto;
+}
+
+/* the add-node and JSON flows are full-screen on phones */
+@media (max-width: 819px) {
+  .dialog-full {
+    width: 100vw;
+    max-width: none; /* the UA sheet caps dialogs below full width */
+    height: 100dvh;
+    max-height: none;
+    margin: 0;
+    border-radius: 0;
+    padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+  }
+  .dialog-full form { height: 100%; }
+  .dialog-full .dialog-actions { margin-top: auto; }
+  #json-text { min-height: 0; }
 }
 
 /* ---- motion ------------------------------------------------------------ */
