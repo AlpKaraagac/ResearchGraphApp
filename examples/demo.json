@@ -1,0 +1,225 @@
+{
+  "version": 1,
+  "meta": {
+    "id": "perceiver-demo",
+    "title": "Perceiver effects in first impressions"
+  },
+  "nodes": [
+    {
+      "id": "q-perceiver",
+      "type": "question",
+      "label": "How much of the reaction is the perceiver?",
+      "status": "partly-answered"
+    },
+    {
+      "id": "q-situation",
+      "type": "question",
+      "label": "How much do situations change the perceiver's contribution?",
+      "status": "open"
+    },
+    {
+      "id": "q-stability",
+      "type": "question",
+      "label": "Are perceiver effects stable across stimulus sets?",
+      "status": "bounded"
+    },
+    {
+      "id": "gap-decomp",
+      "type": "gap",
+      "label": "No joint decomposition across person, situation and stimulus",
+      "status": "verified"
+    },
+    {
+      "id": "gap-stability",
+      "type": "gap",
+      "label": "Stability estimates rely on single stimulus sets",
+      "status": "asserted"
+    },
+    {
+      "id": "con-perceiver",
+      "type": "construct",
+      "label": "Perceiver"
+    },
+    {
+      "id": "con-exchange",
+      "type": "construct",
+      "label": "Exchangeability"
+    },
+    {
+      "id": "con-caps",
+      "type": "construct",
+      "label": "CAPS"
+    },
+    {
+      "id": "src-kenny",
+      "type": "source",
+      "label": "Kenny (1994) — Interpersonal Perception",
+      "status": "verified",
+      "fields": {
+        "Citation": "Guilford Press, New York",
+        "Type": "book"
+      }
+    },
+    {
+      "id": "src-mischel",
+      "type": "source",
+      "label": "Mischel & Shoda (1995) — A cognitive-affective system theory of personality",
+      "status": "read",
+      "fields": {
+        "Citation": "Psychological Review, 102(2), 246–268",
+        "Type": "article-journal"
+      },
+      "meta": { "doi": "10.1037/0033-295X.102.2.246" }
+    },
+    {
+      "id": "src-preprint",
+      "type": "source",
+      "label": "Rau et al. (2024) — Perceiver variance across contexts (preprint)",
+      "status": "unverified",
+      "fields": {
+        "Citation": "PsyArXiv preprint",
+        "Type": "article"
+      }
+    },
+    {
+      "id": "src-hehman",
+      "type": "source",
+      "label": "Hehman et al. (2017) — Perceiver and target contributions to impressions",
+      "status": "read",
+      "fields": {
+        "Citation": "Journal of Personality and Social Psychology, 113(4), 513–529",
+        "Type": "article-journal"
+      },
+      "meta": { "doi": "10.1037/pspa0000090" }
+    },
+    {
+      "id": "st-decomp",
+      "type": "study",
+      "label": "Study 1 — variance decomposition of first impressions",
+      "status": "complete",
+      "fields": {
+        "Design": "Round-robin ratings, perceivers crossed with faces"
+      }
+    },
+    {
+      "id": "st-stimuli",
+      "type": "study",
+      "label": "Study 2 — cross-stimulus replication",
+      "status": "running"
+    },
+    {
+      "id": "m-decomp",
+      "type": "method",
+      "label": "Cross-classified random-effects decomposition",
+      "status": "run"
+    },
+    {
+      "id": "m-bootstrap",
+      "type": "method",
+      "label": "Paired bootstrap of the gap",
+      "status": "run"
+    },
+    {
+      "id": "mat-faces",
+      "type": "material",
+      "label": "Face stimulus set (240 images)",
+      "status": "frozen"
+    },
+    {
+      "id": "mat-panel",
+      "type": "material",
+      "label": "Perceiver panel, wave 1 (N = 312)",
+      "status": "collected"
+    },
+    {
+      "id": "f-perceiver-var",
+      "type": "finding",
+      "label": "Perceiver explains 34% of reaction variance",
+      "status": "supported",
+      "fields": {
+        "Statistic": "ICC(perceiver) = .34, 95% CI [.29, .39]"
+      }
+    },
+    {
+      "id": "f-null-situation",
+      "type": "finding",
+      "label": "Situation × perceiver interaction: p = .665, bound 0.10",
+      "status": "null-with-bound",
+      "fields": {
+        "Statistic": "p = .665; upper bound d = 0.10"
+      }
+    },
+    {
+      "id": "f-sealed",
+      "type": "finding",
+      "label": "Holdout replication estimate (sealed until wave-2 codes freeze)",
+      "status": "sealed"
+    },
+    {
+      "id": "claim-perceiver",
+      "type": "claim",
+      "label": "About a third of the reaction is the perceiver, not the face",
+      "status": "provisional"
+    },
+    {
+      "id": "claim-stable",
+      "type": "claim",
+      "label": "Perceiver effects generalize across stimulus sets",
+      "status": "established"
+    },
+    {
+      "id": "claim-limits",
+      "type": "claim",
+      "label": "Every null here is a limit on what was visible",
+      "status": "provisional"
+    },
+    {
+      "id": "note-limits",
+      "type": "note",
+      "label": "Write these as limits, not absences"
+    },
+    {
+      "id": "task-verify",
+      "type": "task",
+      "label": "Verify the Rau et al. citation",
+      "status": "todo"
+    },
+    {
+      "id": "task-wave2",
+      "type": "task",
+      "label": "Freeze wave-2 coding, then unseal the holdout estimate",
+      "status": "todo"
+    }
+  ],
+  "edges": [
+    { "from": "gap-decomp", "relation": "motivates", "to": "q-perceiver" },
+    { "from": "gap-stability", "relation": "motivates", "to": "q-stability" },
+    { "from": "q-situation", "relation": "asks", "to": "q-perceiver" },
+    { "from": "st-decomp", "relation": "addresses", "to": "q-perceiver" },
+    { "from": "st-stimuli", "relation": "addresses", "to": "q-situation" },
+    { "from": "st-stimuli", "relation": "addresses", "to": "q-stability" },
+    { "from": "m-decomp", "relation": "uses", "to": "st-decomp" },
+    { "from": "m-bootstrap", "relation": "uses", "to": "st-decomp" },
+    { "from": "mat-faces", "relation": "uses", "to": "st-decomp" },
+    { "from": "mat-panel", "relation": "uses", "to": "st-decomp" },
+    { "from": "mat-faces", "relation": "uses", "to": "st-stimuli" },
+    { "from": "f-perceiver-var", "relation": "yields", "to": "st-decomp" },
+    { "from": "f-null-situation", "relation": "yields", "to": "st-decomp" },
+    { "from": "f-sealed", "relation": "yields", "to": "st-decomp" },
+    { "from": "f-perceiver-var", "relation": "supports", "to": "claim-perceiver" },
+    { "from": "f-sealed", "relation": "supports", "to": "claim-stable" },
+    { "from": "f-null-situation", "relation": "bounds", "to": "q-stability" },
+    { "from": "claim-perceiver", "relation": "answers", "to": "q-perceiver" },
+    { "from": "src-kenny", "relation": "grounds", "to": "con-perceiver" },
+    { "from": "src-kenny", "relation": "grounds", "to": "con-exchange" },
+    { "from": "src-kenny", "relation": "grounds", "to": "gap-decomp" },
+    { "from": "src-mischel", "relation": "grounds", "to": "con-caps" },
+    { "from": "src-preprint", "relation": "grounds", "to": "claim-perceiver" },
+    { "from": "src-hehman", "relation": "threatens", "to": "claim-stable" },
+    { "from": "src-hehman", "relation": "inspires", "to": "st-stimuli" },
+    { "from": "src-kenny", "relation": "inspires", "to": "m-decomp" },
+    { "from": "note-limits", "relation": "qualifies", "to": "claim-limits" },
+    { "from": "task-verify", "relation": "blocks", "to": "src-preprint" },
+    { "from": "task-wave2", "relation": "blocks", "to": "f-sealed" }
+  ]
+}
