@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f4f4f6">
+<title>Research graph</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<header id="toolbar">
+  <div class="bar">
+    <h1 id="graph-title">Research graph</h1>
+    <input id="search" type="search" placeholder="Search nodes…" aria-label="Search nodes" autocomplete="off">
+    <div class="view-controls" role="group" aria-label="View controls">
+      <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
+      <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+      <button id="fit" type="button">Fit</button>
+    </div>
+  </div>
+  <div id="type-filters" role="group" aria-label="Filter by node type"></div>
+</header>
+<main id="canvas" aria-label="Graph canvas">
+  <div id="viewport">
+    <svg id="edge-layer" width="2" height="2" aria-hidden="true">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5"
+                markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 1 L 9 5 L 0 9 z"></path>
+        </marker>
+      </defs>
+      <g id="edge-lines"></g>
+      <g id="edge-labels"></g>
+    </svg>
+    <div id="node-layer"></div>
+  </div>
+  <div id="empty-state" hidden>
+    <p id="empty-message"></p>
+  </div>
+  <aside id="detail" hidden aria-label="Node details">
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <header class="detail-head">
+      <span id="detail-type" class="type-tag"></span>
+      <span id="detail-status" class="status" hidden></span>
+      <button id="detail-close" type="button" aria-label="Close details">×</button>
+    </header>
+    <h2 id="detail-label"></h2>
+    <dl id="detail-fields"></dl>
+    <section id="detail-outgoing" hidden>
+      <h3>Outgoing</h3>
+      <div class="rel-list"></div>
+    </section>
+    <section id="detail-incoming" hidden>
+      <h3>Incoming</h3>
+      <div class="rel-list"></div>
+    </section>
+    <p id="detail-id" class="detail-id"></p>
+  </aside>
+</main>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

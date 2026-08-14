@@ -1,0 +1,454 @@
+/* Mobile-first. Base styles are the narrow layout; ≥820px adds the desktop
+   side panel. No external fonts, no CDNs — system stack only. */
+
+:root {
+  color-scheme: light;
+  --bg: #f4f4f6;
+  --surface: #ffffff;
+  --ink: #1b1c20;
+  --muted: #6b6f7b;
+  --line: #d9dbe1;
+  --accent: #3b5bdb;
+  --edge: #a9adba;
+
+  /* one hue region per family: asking purple, grounding blue,
+     doing green, concluding warm */
+  --c-question: #7048e8;
+  --c-gap: #9c36b5;
+  --c-construct: #1971c2;
+  --c-source: #0c8599;
+  --c-study: #2f9e44;
+  --c-method: #66a80f;
+  --c-material: #099268;
+  --c-finding: #e8590c;
+  --c-claim: #e03131;
+  --c-note: #f08c00;
+  --c-task: #846358;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ---- toolbar ----------------------------------------------------------- */
+
+#toolbar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  padding-top: env(safe-area-inset-top);
+  flex: none;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 4px;
+}
+
+#graph-title {
+  font-size: 14px;
+  font-weight: 650;
+  margin: 0;
+  max-width: 30vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#search {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px; /* below 16px iOS zooms the page on focus */
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.view-controls {
+  display: flex;
+  gap: 4px;
+}
+
+.view-controls button {
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.view-controls button:active { background: var(--bg); }
+
+/* ---- type filter chips ------------------------------------------------- */
+
+#type-filters {
+  display: flex;
+  gap: 6px;
+  padding: 4px 10px 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+#type-filters::-webkit-scrollbar { display: none; }
+
+.chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 2px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 12.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.chip .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--type-color, var(--muted));
+}
+
+.chip .count {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.chip[aria-pressed="false"] {
+  opacity: 0.45;
+}
+.chip[aria-pressed="false"] .dot { background: var(--muted); }
+
+/* ---- canvas ------------------------------------------------------------ */
+
+#canvas {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  background-image: radial-gradient(var(--line) 1px, transparent 1px);
+  background-size: 24px 24px;
+  cursor: grab;
+}
+
+#canvas.is-panning { cursor: grabbing; }
+
+#viewport {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+#edge-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+}
+
+#edge-layer line {
+  stroke: var(--edge);
+  stroke-width: 1.5;
+}
+
+#edge-layer marker path { fill: var(--edge); }
+
+.edge-label {
+  font-size: 9.5px;
+  fill: var(--muted);
+  text-anchor: middle;
+  dominant-baseline: central;
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+.zoomed-out .edge-label { display: none; }
+
+.edge.is-active { stroke: var(--accent); stroke-width: 2; }
+.edge.is-dim, .edge-label.is-dim { opacity: 0.1; }
+.edge.is-hidden, .edge-label.is-hidden { display: none; }
+
+/* ---- node cards -------------------------------------------------------- */
+
+.node {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+  width: max-content;
+  max-width: 185px;
+  padding: 7px 10px 8px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--type-color, var(--muted));
+  border-radius: 9px;
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgb(27 28 32 / 0.09);
+  text-align: left;
+  cursor: pointer;
+}
+
+.node .node-type {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--type-color, var(--muted));
+}
+
+.node .node-label {
+  display: block;
+  font-size: 12.5px;
+  line-height: 1.3;
+  overflow-wrap: break-word;
+}
+
+.node.is-selected {
+  border-color: var(--accent);
+  border-left-color: var(--accent);
+  box-shadow: 0 2px 10px rgb(59 91 219 / 0.35);
+}
+
+.node.is-dim { opacity: 0.18; }
+.node.is-hidden { display: none; }
+
+/* status flag */
+.status {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 1px 7px 2px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  background: #e9ebef;
+  color: var(--muted);
+}
+.status.tone-good { background: #d3f2df; color: #14572c; }
+.status.tone-bad { background: #ffdcdc; color: #8f1d1d; }
+.status.tone-warn { background: #fff0d3; color: #7a4d07; }
+.status.tone-info { background: #e5dcfb; color: #47318f; }
+
+/* per-type colors */
+.type-question { --type-color: var(--c-question); }
+.type-gap { --type-color: var(--c-gap); }
+.type-construct { --type-color: var(--c-construct); }
+.type-source { --type-color: var(--c-source); }
+.type-study { --type-color: var(--c-study); }
+.type-method { --type-color: var(--c-method); }
+.type-material { --type-color: var(--c-material); }
+.type-finding { --type-color: var(--c-finding); }
+.type-claim { --type-color: var(--c-claim); }
+.type-note { --type-color: var(--c-note); }
+.type-task { --type-color: var(--c-task); }
+
+/* ---- empty state ------------------------------------------------------- */
+
+#empty-state {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+}
+
+/* the explicit display would otherwise override the hidden attribute,
+   leaving an invisible full-canvas overlay that eats every click */
+#empty-state[hidden] { display: none; }
+
+/* ---- detail panel: bottom sheet by default ----------------------------- */
+
+#detail {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  max-height: 58%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -4px 24px rgb(27 28 32 / 0.18);
+  padding: 6px 16px calc(14px + env(safe-area-inset-bottom));
+  touch-action: pan-y;
+}
+
+.sheet-handle {
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+  margin: 4px auto 8px;
+}
+
+.detail-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.type-tag {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--type-color, var(--muted));
+}
+
+#detail-close {
+  margin-left: auto;
+  min-width: 40px;
+  min-height: 40px;
+  border: none;
+  background: none;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+#detail h2 {
+  margin: 2px 0 10px;
+  font-size: 16.5px;
+  line-height: 1.3;
+}
+
+#detail-fields {
+  margin: 0 0 4px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 12px;
+  font-size: 13px;
+}
+#detail-fields dt { color: var(--muted); }
+#detail-fields dd { margin: 0; overflow-wrap: anywhere; }
+#detail-fields a { color: var(--accent); }
+
+#detail h3 {
+  margin: 12px 0 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.rel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rel-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 42px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  cursor: pointer;
+  text-align: left;
+}
+.rel-row:active { background: var(--bg); }
+
+.rel-row .rel-name {
+  flex: none;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--muted);
+  min-width: 72px;
+}
+
+.rel-row .dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--type-color, var(--muted));
+}
+
+.rel-row .rel-target {
+  font-size: 12.5px;
+  line-height: 1.25;
+}
+
+.detail-id {
+  margin: 12px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* ---- desktop ----------------------------------------------------------- */
+
+@media (min-width: 820px) {
+  #graph-title { font-size: 15px; max-width: 26rem; }
+  #search { max-width: 24rem; }
+  #type-filters { flex-wrap: wrap; overflow: visible; }
+
+  #detail {
+    left: auto;
+    top: 12px;
+    right: 12px;
+    bottom: auto;
+    width: 360px;
+    max-height: calc(100% - 24px);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: 0 6px 28px rgb(27 28 32 / 0.16);
+    padding: 4px 16px 14px;
+  }
+  .sheet-handle { display: none; }
+}
+
+/* ---- motion ------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: no-preference) {
+  .node, .edge, .edge-label, .chip { transition: opacity 0.15s ease; }
+  .node { transition: opacity 0.15s ease, box-shadow 0.15s ease; }
+}
