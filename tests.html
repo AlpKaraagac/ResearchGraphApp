@@ -36,6 +36,9 @@ import {
 import { LINT_RULES, lint } from './js/lint.js';
 import { ID_PREFIXES, slugify, uniqueNodeId, directedRelationOptions } from './js/forms.js';
 import { toCanvas, fromCanvas, looksLikeCanvas } from './js/exporter.js';
+import {
+  extractZoteroKey, cslToSource, parseBibtex, parseSourcesText, planSourceImport, applySourcePatch,
+} from './js/sources.js';
 
 // ---- harness -------------------------------------------------------------
 
@@ -663,6 +666,164 @@ test('looksLikeCanvas tells the two formats apart', () => {
   assert(!looksLikeCanvas(canvasGraph), 'a graph is not a canvas');
   assert(!looksLikeCanvas({ nodes: [] }));
   assert(!looksLikeCanvas(null));
+});
+
+// ---- sources: CSL-JSON and BibTeX ----------------------------------------
+
+describe('Sources — CSL mapping');
+
+test('cslToSource follows the schema §5 mapping', () => {
+  const node = cslToSource({
+    id: '392648/7VLLCTW7',
+    'citation-key': 'kenny1994',
+    type: 'book',
+    title: 'Interpersonal perception: A social relations analysis',
+    'title-short': 'Interpersonal perception',
+    author: [{ family: 'Kenny', given: 'David A.' }],
+    issued: { 'date-parts': [[1994]] },
+    'container-title': 'Guilford Press',
+    DOI: '10.1000/example',
+  });
+  assertEqual(node.id, 'kenny1994', 'citation-key wins over id');
+  assertEqual(node.type, 'source');
+  assertEqual(node.label, 'Kenny (1994) — Interpersonal perception');
+  assertEqual(node.fields.Citation, 'Guilford Press, 10.1000/example');
+  assertEqual(node.fields.Type, 'book');
+  assertEqual(node.meta.doi, '10.1000/example');
+  assertEqual(node.meta.zoteroKey, '7VLLCTW7', 'item key extracted from the id');
+  assertDeepEqual(validateNode(node), []);
+});
+
+test('label handles two authors, et al., missing authors and missing year', () => {
+  const two = cslToSource({ id: 'a', title: 'T', author: [{ family: 'Kenny' }, { family: 'Cook' }], issued: { 'date-parts': [[2001]] } });
+  assertEqual(two.label, 'Kenny & Cook (2001) — T');
+  const three = cslToSource({ id: 'b', title: 'T', author: [{ family: 'A' }, { family: 'B' }, { family: 'C' }] });
+  assertEqual(three.label, 'A et al. (n.d.) — T');
+  const none = cslToSource({ id: 'c', title: 'Standard for widgets' });
+  assertEqual(none.label, 'Standard for widgets (n.d.)');
+});
+
+test('long titles truncate at a word boundary', () => {
+  const node = cslToSource({
+    id: 'd',
+    title: 'A remarkably long title that keeps going well past the point where a card label stays readable',
+    author: [{ family: 'Long' }],
+  });
+  assert(node.label.length < 75, `label is short (got ${node.label.length})`);
+  assert(node.label.endsWith('…'));
+});
+
+test('extractZoteroKey reads both API id shapes', () => {
+  assertEqual(extractZoteroKey('392648/7VLLCTW7'), '7VLLCTW7');
+  assertEqual(extractZoteroKey('http://zotero.org/users/475425/items/ABCD2345'), 'ABCD2345');
+  assertEqual(extractZoteroKey('kenny1994'), undefined, 'citation keys are not zotero keys');
+});
+
+describe('Sources — BibTeX');
+
+test('parseBibtex reads entries with braces, quotes, and nesting', () => {
+  const items = parseBibtex(`
+    @article{kenny1994,
+      author = {Kenny, David A. and Cook, William},
+      title = {Interpersonal {Perception} and its friends},
+      journal = "Psychological Review",
+      year = 1994,
+      volume = {102},
+      pages = {246--268},
+      doi = {10.1037/0033-295X.102.2.246}
+    }
+    @book{mischel1995, author = {Walter Mischel}, title = {A book}, year = {1995} }
+  `);
+  assertEqual(items.length, 2);
+  assertEqual(items[0]['citation-key'], 'kenny1994');
+  assertEqual(items[0].type, 'article-journal', 'article maps to article-journal');
+  assertDeepEqual(items[0].author, [
+    { family: 'Kenny', given: 'David A.' }, { family: 'Cook', given: 'William' },
+  ]);
+  assertEqual(items[0].title, 'Interpersonal Perception and its friends', 'braces stripped');
+  assertEqual(items[0]['container-title'], 'Psychological Review');
+  assertEqual(items[0].page, '246–268', 'double hyphen becomes an en dash');
+  assertDeepEqual(items[0].issued, { 'date-parts': [[1994]] });
+  assertDeepEqual(items[1].author, [{ family: 'Mischel', given: 'Walter' }],
+    'plain "Given Family" names split on the last word');
+  assertEqual(items[1].type, 'book');
+});
+
+test('biblatex fields work: journaltitle, date, and @comment is skipped', () => {
+  const items = parseBibtex(`
+    @comment{jabref-meta: databaseType:biblatex;}
+    @article{rau2024, author = {Rau, R.}, title = {T}, journaltitle = {Preprint Server}, date = {2024-05-01} }
+  `);
+  assertEqual(items.length, 1);
+  assertEqual(items[0]['container-title'], 'Preprint Server');
+  assertDeepEqual(items[0].issued, { 'date-parts': [[2024]] });
+});
+
+describe('Sources — detection and import planning');
+
+test('parseSourcesText accepts a CSL array, an {items} object, and BibTeX', () => {
+  assertEqual(parseSourcesText('[{"id":"a","title":"T"}]').items.length, 1);
+  assertEqual(parseSourcesText('{"items":[{"id":"a","title":"T"}]}').items.length, 1);
+  assertEqual(parseSourcesText('@misc{x, title={T}}').items.length, 1);
+  assertEqual(parseSourcesText('[{"id":"a","title":"T"},{"id":"junk"}]').ignored, 1,
+    'items with neither title nor author are counted as ignored');
+});
+
+test('parseSourcesText rejects what it cannot read, with a reason', () => {
+  for (const bad of ['', 'hello world', '{"nodes":[]}', '[{']) {
+    let threw = false;
+    try { parseSourcesText(bad); } catch { threw = true; }
+    assert(threw, `rejects ${JSON.stringify(bad)}`);
+  }
+});
+
+test('new items become to-read source nodes; colliding ids get a suffix', () => {
+  const graph = g([n('kenny1994', 'note')]);
+  const plan = planSourceImport(graph, [{ id: 'kenny1994', title: 'T', author: [{ family: 'Kenny' }] }]);
+  assertEqual(plan.updates.length, 0, 'a note with the same id is not an update target');
+  assertEqual(plan.creates.length, 1);
+  assertEqual(plan.creates[0].id, 'kenny1994-2', 'id collision with a non-source gets a suffix');
+  assertEqual(plan.creates[0].status, 'to-read');
+});
+
+test('re-import updates rather than duplicates: zoteroKey, then DOI, then citation key', () => {
+  const graph = g([
+    n('src-a', 'source', 'verified', { meta: { zoteroKey: 'AAAA1111' } }),
+    n('src-b', 'source', 'read', { meta: { doi: '10.1/B' } }),
+    n('src-c', 'source', 'unverified'),
+  ]);
+  const plan = planSourceImport(graph, [
+    { id: '99/AAAA1111', title: 'A new title', author: [{ family: 'A' }] },
+    { id: 'different-key', title: 'B', DOI: '10.1/b', author: [{ family: 'B' }] },
+    { id: 'src-c', title: 'C', author: [{ family: 'C' }] },
+    { id: 'brand-new', title: 'D', author: [{ family: 'D' }] },
+  ]);
+  assertDeepEqual(plan.updates.map((u) => u.id), ['src-a', 'src-b', 'src-c']);
+  assertDeepEqual(plan.creates.map((c) => c.id), ['brand-new']);
+  assertEqual(plan.updates[1].id, 'src-b', 'DOI match is case-insensitive');
+});
+
+test('the same item twice in one paste is skipped, not duplicated', () => {
+  const item = { id: '99/AAAA1111', title: 'T', author: [{ family: 'A' }] };
+  const plan = planSourceImport(g([]), [item, item]);
+  assertEqual(plan.creates.length, 1);
+  assertEqual(plan.skipped, 1);
+});
+
+test('applySourcePatch updates label, Citation, Type and meta but never status or extra fields', () => {
+  const node = n('src-a', 'source', 'verified', {
+    fields: { Citation: 'old', Notes: 'mine' }, meta: { doi: '10.1/A' },
+  });
+  applySourcePatch(node, cslToSource({
+    id: '99/AAAA1111', title: 'New title', author: [{ family: 'A' }],
+    issued: { 'date-parts': [[2020]] }, 'container-title': 'Journal', DOI: '10.1/A',
+  }));
+  assertEqual(node.label, 'A (2020) — New title');
+  assertEqual(node.status, 'verified', 'status survives the re-import');
+  assertEqual(node.fields.Notes, 'mine', 'user fields survive');
+  assertEqual(node.fields.Citation, 'Journal, 10.1/A');
+  assertEqual(node.meta.zoteroKey, 'AAAA1111', 'meta merges');
+  assertDeepEqual(validateNode(node), []);
 });
 
 // ---- render --------------------------------------------------------------
