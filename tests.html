@@ -34,6 +34,7 @@ import {
   emptyGraph, edgeKey, validateNode, validateEdge, validateGraph,
 } from './js/schema.js';
 import { LINT_RULES, lint } from './js/lint.js';
+import { ID_PREFIXES, slugify, uniqueNodeId, directedRelationOptions } from './js/forms.js';
 
 // ---- harness -------------------------------------------------------------
 
@@ -552,6 +553,48 @@ test('findings carry rule number, rule id, anchor node and message; sorted by ru
 test('lint tolerates edges whose endpoints are missing', () => {
   const graph = g([n('c1', 'claim', 'provisional')], [e('ghost', 'supports', 'c1')]);
   assertDeepEqual(flagged(graph, 'unsupported-claim'), ['c1']);
+});
+
+// ---- edit helpers --------------------------------------------------------
+
+describe('Edit helpers');
+
+test('slugify lowercases, strips punctuation and diacritics, keeps four words', () => {
+  assertEqual(slugify('How much of the reaction is the perceiver?'), 'how-much-of-the');
+  assertEqual(slugify('Écrire des limites'), 'ecrire-des-limites');
+  assertEqual(slugify('p = .665!!'), 'p-665');
+  assertEqual(slugify('???'), 'node', 'labels with no usable characters fall back');
+});
+
+test('uniqueNodeId prefixes by type and dedupes with a counter', () => {
+  assertEqual(uniqueNodeId('question', 'Open question', new Set()), 'q-open-question');
+  assertEqual(uniqueNodeId('source', 'Kenny 1994', new Set(['src-kenny-1994'])), 'src-kenny-1994-2');
+  assertEqual(
+    uniqueNodeId('finding', 'Null', new Set(['f-null', 'f-null-2'])),
+    'f-null-3',
+  );
+});
+
+test('every node type has an id prefix', () => {
+  assertDeepEqual(Object.keys(ID_PREFIXES).sort(), [...NODE_TYPES].sort());
+});
+
+test('directedRelationOptions offers only schema-legal relations, both directions', () => {
+  assertDeepEqual(directedRelationOptions('finding', 'claim'), [
+    { relation: 'supports', direction: 'out' },
+    { relation: 'contradicts', direction: 'out' },
+  ]);
+  assertDeepEqual(directedRelationOptions('claim', 'finding'), [
+    { relation: 'supports', direction: 'in' },
+    { relation: 'contradicts', direction: 'in' },
+  ]);
+  assertDeepEqual(directedRelationOptions('question', 'material'), [],
+    'no relation runs between question and material in either direction');
+  assertDeepEqual(directedRelationOptions('gap', 'question'), [
+    { relation: 'motivates', direction: 'out' },
+  ]);
+  // note → anything, and anything can be qualified by a note
+  assertDeepEqual(directedRelationOptions('note', 'note').map((o) => o.direction), ['out', 'in']);
 });
 
 // ---- render --------------------------------------------------------------
