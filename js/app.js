@@ -40,9 +40,11 @@ const state = {
   selected: null,
   neighbors: new Set(),
   search: '',
-  hiddenTypes: new Set(),
+  shownTypes: null, // null = no filter (all types visible); a Set isolates those types
   saveFailed: false,
 };
+
+const isTypeHidden = (type) => state.shownTypes !== null && !state.shownTypes.has(type);
 
 const view = createView(ui.canvas, ui.viewport);
 const renderer = createRenderer(ui, { onSelect: (id) => select(id) });
@@ -102,7 +104,7 @@ function matchesSearch(node) {
 function applyVisibility() {
   renderer.setState(state.graph, {
     selectedId: state.selected,
-    isHidden: (node) => state.hiddenTypes.has(node.type),
+    isHidden: (node) => isTypeHidden(node.type),
     isDim: (node) => {
       if (state.search && !matchesSearch(node)) return true;
       if (state.selected) return node.id !== state.selected && !state.neighbors.has(node.id);
@@ -260,6 +262,12 @@ ui.search.addEventListener('input', () => {
   applyVisibility();
 });
 
+function updateChipStates() {
+  for (const chip of ui.filters.querySelectorAll('.chip')) {
+    chip.setAttribute('aria-pressed', String(!isTypeHidden(chip.dataset.type)));
+  }
+}
+
 function buildFilterChips() {
   ui.filters.replaceChildren();
   const counts = new Map();
@@ -270,7 +278,7 @@ function buildFilterChips() {
     const chip = document.createElement('button');
     chip.type = 'button';
     chip.className = `chip type-${type}`;
-    chip.setAttribute('aria-pressed', String(!state.hiddenTypes.has(type)));
+    chip.dataset.type = type;
     chip.setAttribute('aria-label', `Show ${type} nodes`);
 
     const dot = document.createElement('span');
@@ -282,17 +290,26 @@ function buildFilterChips() {
     count.textContent = String(counts.get(type) ?? 0);
 
     chip.append(dot, name, count);
+    // First tap isolates the type; further taps toggle types in and out of
+    // the shown set; emptying the set brings every type back.
     chip.addEventListener('click', () => {
-      if (state.hiddenTypes.has(type)) state.hiddenTypes.delete(type);
-      else state.hiddenTypes.add(type);
-      chip.setAttribute('aria-pressed', String(!state.hiddenTypes.has(type)));
-      if (state.selected && state.hiddenTypes.has(nodeById(state.selected)?.type)) {
+      if (state.shownTypes === null) {
+        state.shownTypes = new Set([type]);
+      } else if (state.shownTypes.has(type)) {
+        state.shownTypes.delete(type);
+        if (state.shownTypes.size === 0) state.shownTypes = null;
+      } else {
+        state.shownTypes.add(type);
+      }
+      updateChipStates();
+      if (state.selected && isTypeHidden(nodeById(state.selected)?.type)) {
         deselect();
       }
       applyVisibility();
     });
     ui.filters.append(chip);
   }
+  updateChipStates();
 }
 
 // ---- view controls ---------------------------------------------------------
