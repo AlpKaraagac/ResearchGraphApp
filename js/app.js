@@ -4,10 +4,12 @@
 // localStorage is never allowed to drift from what is on screen.
 
 import { NODE_TYPES, validateGraph, edgeKey } from './schema.js';
+import { lint } from './lint.js';
 import { createLayout } from './layout.js';
 import { createView } from './view.js';
-import { createRenderer, renderPanel } from './render.js';
-import { createForms } from './forms.js';
+import { createRenderer, renderPanel, renderLintPanel } from './render.js';
+import { createForms, slugify } from './forms.js';
+import { toCanvas, importText, buildSelfContainedHtml, download } from './exporter.js';
 import * as store from './store.js';
 
 const $ = (id) => document.getElementById(id);
@@ -32,6 +34,13 @@ const ui = {
   detailOutgoing: $('detail-outgoing'),
   detailIncoming: $('detail-incoming'),
   detailId: $('detail-id'),
+  lintPanel: $('lint-panel'),
+  lintList: $('lint-list'),
+  lintBadge: $('lint-badge'),
+  shareDialog: $('share-dialog'),
+  shareInfo: $('share-info'),
+  shareError: $('share-error'),
+  importInput: $('import-input'),
 };
 
 const state = {
@@ -77,9 +86,11 @@ function syncPositionsIntoGraph() {
 
 function persist() {
   ensureGraphId();
+  state.graph.meta.modified = new Date().toISOString();
   syncPositionsIntoGraph();
   const result = store.save(state.graph);
   setSaveIndicator(result.ok);
+  refreshLint();
 }
 
 window.addEventListener('beforeunload', (event) => {
@@ -127,6 +138,7 @@ function refreshEmptyState() {
 
 function select(id, { center = false } = {}) {
   if (!nodeById(id)) return;
+  ui.lintPanel.hidden = true; // the two sheets share the same space
   state.selected = id;
   state.neighbors = new Set();
   for (const edge of state.graph.edges) {
@@ -156,11 +168,50 @@ ui.canvas.addEventListener('click', (event) => {
   // a detached target has no ancestors, which would read as a background click
   if (!event.target.isConnected) return;
   if (event.target.closest('#add-node-btn')) return;
-  if (!event.target.closest('.node') && !event.target.closest('#detail')) deselect();
+  if (event.target.closest('#detail') || event.target.closest('#lint-panel')) return;
+  if (!event.target.closest('.node')) deselect();
 });
 $('detail-close').addEventListener('click', deselect);
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && !document.querySelector('dialog[open]')) deselect();
+  if (event.key === 'Escape' && !document.querySelector('dialog[open]')) {
+    if (!ui.lintPanel.hidden) ui.lintPanel.hidden = true;
+    else deselect();
+  }
+});
+
+// ---- lint ------------------------------------------------------------------
+
+function jumpToFinding(nodeId) {
+  const node = nodeById(nodeId);
+  if (!node) return;
+  if (isTypeHidden(node.type)) {
+    state.shownTypes = null; // a hidden offender must become visible to be shown
+    updateChipStates();
+  }
+  ui.lintPanel.hidden = true;
+  select(nodeId, { center: true });
+}
+
+function refreshLint() {
+  state.lint = lint(state.graph);
+  ui.lintBadge.textContent = String(state.lint.length);
+  ui.lintBadge.classList.toggle('clean', state.lint.length === 0);
+  if (!ui.lintPanel.hidden) {
+    renderLintPanel(ui, state.lint, { onJump: jumpToFinding });
+  }
+}
+
+$('lint-btn').addEventListener('click', () => {
+  if (!ui.lintPanel.hidden) {
+    ui.lintPanel.hidden = true;
+    return;
+  }
+  deselect();
+  renderLintPanel(ui, state.lint ?? [], { onJump: jumpToFinding });
+  ui.lintPanel.hidden = false;
+});
+$('lint-close').addEventListener('click', () => {
+  ui.lintPanel.hidden = true;
 });
 
 // ---- mutations -------------------------------------------------------------
@@ -235,8 +286,70 @@ $('add-node-btn').addEventListener('click', () => {
   forms.openAddNode(new Set(state.graph.nodes.map((n) => n.id)));
 });
 $('json-btn').addEventListener('click', () => {
+  ui.shareDialog.close();
   syncPositionsIntoGraph();
   forms.openJson(JSON.stringify(state.graph, null, 2));
+});
+
+// ---- share: export and import ----------------------------------------------
+
+const isEmbeddedCopy = document.getElementById('embedded-graph') !== null;
+
+function shareMessage(text, isError = false) {
+  ui.shareInfo.hidden = isError || !text;
+  ui.shareError.hidden = !isError || !text;
+  (isError ? ui.shareError : ui.shareInfo).textContent = text;
+}
+
+function fileSlug() {
+  return slugify(state.graph.meta?.title ?? state.graph.meta?.id ?? 'graph');
+}
+
+$('share-btn').addEventListener('click', () => {
+  shareMessage('');
+  // a self-contained copy cannot read its own sources to re-assemble itself
+  $('export-html').hidden = isEmbeddedCopy;
+  ui.shareDialog.showModal();
+});
+
+$('export-json').addEventListener('click', () => {
+  syncPositionsIntoGraph();
+  download(`${fileSlug()}.json`, JSON.stringify(state.graph, null, 2));
+  shareMessage('Graph JSON downloaded.');
+});
+
+$('export-canvas').addEventListener('click', () => {
+  syncPositionsIntoGraph();
+  const canvas = toCanvas(state.graph, renderer.sizes);
+  download(`${fileSlug()}.canvas`, JSON.stringify(canvas, null, 2));
+  shareMessage('JSON Canvas downloaded — openable in Obsidian and anything else that speaks it.');
+});
+
+$('export-html').addEventListener('click', async () => {
+  syncPositionsIntoGraph();
+  try {
+    const html = await buildSelfContainedHtml(state.graph);
+    download(`${fileSlug()}.html`, html, 'text/html');
+    shareMessage('Self-contained HTML downloaded — it opens anywhere, even from a file:// double-click, with nothing installed.');
+  } catch (error) {
+    shareMessage(`Could not build the HTML export: ${error.message}`, true);
+  }
+});
+
+$('import-btn').addEventListener('click', () => ui.importInput.click());
+
+ui.importInput.addEventListener('change', async () => {
+  const file = ui.importInput.files?.[0];
+  ui.importInput.value = '';
+  if (!file) return;
+  const result = importText(await file.text());
+  if (!result.ok) {
+    shareMessage(result.message, true);
+    return;
+  }
+  adoptGraph(result.graph);
+  persist();
+  shareMessage(result.message);
 });
 $('detail-edit').addEventListener('click', () => {
   const node = nodeById(state.selected);
@@ -373,9 +486,32 @@ function adoptGraph(graph) {
   } else {
     state.positions = new Map();
   }
+  refreshLint();
 }
 
 async function loadInitialGraph() {
+  // A self-contained export carries its graph inside the file. It wins over
+  // localStorage unless this browser holds a NEWER edit of the same graph —
+  // reopening the file must never silently discard someone's edits.
+  const embeddedEl = document.getElementById('embedded-graph');
+  if (embeddedEl) {
+    let embedded = null;
+    try {
+      embedded = JSON.parse(embeddedEl.textContent);
+    } catch { /* falls through to the error below */ }
+    if (!embedded || validateGraph(embedded).length > 0) {
+      showEmpty('The graph embedded in this file is invalid.');
+      return;
+    }
+    const stored = store.load(embedded.meta?.id);
+    const storedIsNewer = stored
+      && validateGraph(stored).length === 0
+      && (stored.meta?.modified ?? '') > (embedded.meta?.modified ?? '');
+    adoptGraph(storedIsNewer ? stored : embedded);
+    setSaveIndicator(true);
+    return;
+  }
+
   const saved = store.loadCurrent();
   if (saved) {
     const errors = validateGraph(saved);

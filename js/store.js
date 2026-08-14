@@ -6,13 +6,20 @@
 const GRAPH_PREFIX = 'rg.graph.';
 const CURRENT_KEY = 'rg.current';
 
-export function loadCurrent() {
+export function load(id) {
   try {
-    const id = localStorage.getItem(CURRENT_KEY);
     if (!id) return null;
     const raw = localStorage.getItem(GRAPH_PREFIX + id);
     if (!raw) return null;
     return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export function loadCurrent() {
+  try {
+    return load(localStorage.getItem(CURRENT_KEY));
   } catch {
     return null;
   }
