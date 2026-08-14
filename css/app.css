@@ -584,6 +584,7 @@ dialog {
   padding: 18px;
   width: min(480px, calc(100vw - 32px));
   max-height: min(85dvh, 640px);
+  overflow-y: auto;
   background: var(--surface);
   color: var(--ink);
   box-shadow: 0 12px 40px rgb(27 28 32 / 0.25);
@@ -735,7 +736,7 @@ dialog form { display: flex; flex-direction: column; }
 }
 #confirm-body li { margin-bottom: 3px; }
 
-#json-text {
+.code-input {
   flex: 1;
   min-height: 40dvh;
   font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -749,6 +750,33 @@ dialog form { display: flex; flex-direction: column; }
   white-space: pre;
   overflow: auto;
 }
+
+#sources-text { min-height: 60px; flex: none; height: 20dvh; }
+
+.ghost-btn {
+  min-height: 40px;
+  margin: 0 0 12px;
+  padding: 0 12px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.note-text {
+  margin: 0 0 10px;
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: pre-line;
+}
+
+.zotero-row {
+  display: flex;
+  gap: 8px;
+}
+.zotero-row .field { flex: 1; }
 
 /* the add-node and JSON flows are full-screen on phones */
 @media (max-width: 819px) {

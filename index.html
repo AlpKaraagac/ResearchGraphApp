@@ -138,6 +138,7 @@
     <button type="button" id="export-canvas">Download JSON Canvas (.canvas)</button>
     <button type="button" id="export-html">Download self-contained HTML</button>
     <button type="button" id="import-btn">Import JSON or .canvas…</button>
+    <button type="button" id="import-sources-btn">Import sources (CSL-JSON / BibTeX)…</button>
     <button type="button" id="json-btn">Edit raw JSON</button>
   </div>
   <p id="share-info" class="hint" hidden></p>
@@ -148,11 +149,50 @@
 </dialog>
 <input type="file" id="import-input" accept=".json,.canvas,application/json" hidden>
 
+<dialog id="sources-dialog" class="dialog-full">
+  <form id="sources-form">
+    <h2>Import sources</h2>
+    <label class="field">Paste CSL-JSON or BibTeX
+      <textarea id="sources-text" class="code-input" spellcheck="false" autocapitalize="off"
+                autocomplete="off" placeholder='[ { "type": "book", … } ]   or   @article{kenny1994, …}'></textarea>
+    </label>
+    <button type="button" id="sources-file-btn" class="ghost-btn">…or choose a .json / .bib file</button>
+    <fieldset class="fields-editor">
+      <legend>Zotero Web API</legend>
+      <label class="field">API key
+        <input id="zotero-key" type="text" autocomplete="off"
+               placeholder="only needed for private libraries">
+      </label>
+      <div class="zotero-row">
+        <label class="field">Library
+          <select id="zotero-type">
+            <option value="user">user</option>
+            <option value="group">group</option>
+          </select>
+        </label>
+        <label class="field">Library ID
+          <input id="zotero-id" type="text" inputmode="numeric" placeholder="e.g. 475425">
+        </label>
+      </div>
+      <button type="button" id="zotero-pull" class="ghost-btn">Pull items from Zotero</button>
+      <p class="note-text">The key and ID stay in this browser's storage only. The local
+      Zotero API (port 23119) rejects browser requests, so only the web API is offered.</p>
+    </fieldset>
+    <p id="sources-result" class="note-text" hidden></p>
+    <p id="sources-error" class="form-error" hidden></p>
+    <div class="dialog-actions">
+      <button type="button" data-close>Close</button>
+      <button type="submit" class="primary">Import</button>
+    </div>
+  </form>
+</dialog>
+<input type="file" id="sources-file-input" accept=".json,.csljson,.bib,.txt,application/json" hidden>
+
 <dialog id="json-dialog" class="dialog-full">
   <form id="json-form">
     <h2>Graph JSON</h2>
-    <textarea id="json-text" spellcheck="false" autocapitalize="off" autocomplete="off"
-              aria-label="Graph JSON"></textarea>
+    <textarea id="json-text" class="code-input" spellcheck="false" autocapitalize="off"
+              autocomplete="off" aria-label="Graph JSON"></textarea>
     <p id="json-error" class="form-error" hidden></p>
     <div class="dialog-actions">
       <button type="button" data-close>Cancel</button>
