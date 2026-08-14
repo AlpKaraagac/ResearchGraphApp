@@ -97,8 +97,8 @@ export function looksLikeOldMap(json) {
 }
 
 // Free-text rels are mapped by endpoint types, with the rel text breaking
-// ties (threatens vs grounds, bounds vs supports). Returns null when the
-// closed set has nothing honest to offer.
+// ties (threatens vs grounds, converges vs contradicts, yields vs motivates).
+// Returns null when the closed set has nothing honest to offer.
 function mapEdge(relRaw, fromType, toType) {
   const rel = String(relRaw ?? '').toLowerCase();
   if (fromType === 'note') return { relation: 'qualifies' };
@@ -106,33 +106,50 @@ function mapEdge(relRaw, fromType, toType) {
   if (fromType === 'question' && toType === 'question') return { relation: 'asks' };
   if (fromType === 'gap' && toType === 'question') return { relation: 'motivates' };
   if (fromType === 'study' && toType === 'question') return { relation: 'addresses' };
+  if (fromType === 'study' && toType === 'study') return { relation: 'extends' };
+  if (fromType === 'study' && toType === 'finding') {
+    // "invalidates" is exactly v1.1's relation; tests/replicates has no home
+    return /invalidat/.test(rel) ? { relation: 'invalidates' } : null;
+  }
   if ((fromType === 'method' || fromType === 'material') && toType === 'study') {
     return { relation: 'uses' };
   }
   if (fromType === 'claim' && toType === 'question') return { relation: 'answers' };
+  if (fromType === 'claim' && toType === 'claim') return { relation: 'composes' };
+  if (fromType === 'claim' && toType === 'study') return { relation: 'motivates' };
   if (fromType === 'finding' && toType === 'claim') return { relation: 'supports' };
   if (fromType === 'claim' && toType === 'finding') {
     // "cl generalises r" means the finding is the evidence — flip it
     return { relation: 'supports', flip: true };
   }
   if (fromType === 'finding' && toType === 'finding') {
+    if (/invalidat/.test(rel)) return { relation: 'invalidates' };
     return { relation: /bound/.test(rel) ? 'bounds' : 'supports' };
   }
   if (fromType === 'finding' && toType === 'question') {
     return { relation: 'bounds', approx: true };
   }
   if (fromType === 'finding' && toType === 'study') {
-    // only production-flavoured rels become yields; a finding that merely
-    // *motivated* a study did not come out of it
-    return /yield|headline|finding|audit|validat/.test(rel) ? { relation: 'yields' } : null;
+    if (/validat/.test(rel)) return { relation: 'validates' };
+    if (/motivat/.test(rel)) return { relation: 'motivates' };
+    return /yield|headline|finding|audit/.test(rel) ? { relation: 'yields' } : null;
   }
   if (fromType === 'source') {
     if (toType === 'construct') return { relation: 'grounds' };
+    if (toType === 'question') return { relation: 'grounds' };
+    if (toType === 'material') return { relation: 'documents' };
+    if (toType === 'source') return { relation: 'builds-on' };
     if (toType === 'gap') return { relation: /threat/.test(rel) ? 'threatens' : 'grounds' };
     if (toType === 'claim') {
       if (/contradict/.test(rel)) return { relation: 'contradicts' };
       if (/threat|objection/.test(rel)) return { relation: 'threatens' };
+      if (/converg|precedent|parallel|counterpart|evidence/.test(rel)) return { relation: 'converges' };
       return { relation: 'grounds' };
+    }
+    if (toType === 'finding') {
+      return /tension|contradict|against/.test(rel)
+        ? { relation: 'contradicts' }
+        : { relation: 'converges' };
     }
     if (toType === 'method' || toType === 'study') return { relation: 'inspires' };
   }
@@ -161,6 +178,7 @@ export function migrateOldMap(old) {
     if (n.type === 'venue') report.notes.push(`venue "${n.id}" became a task (§7)`);
 
     const node = { id: n.id, type, label: String(n.label ?? n.id) };
+    if (type === 'claim') node.kind = 'empirical'; // v1.1 default for migrated claims
     if (n.status) {
       const mapped = STATUS_MAP[type][n.status];
       if (mapped) node.status = mapped;
@@ -212,9 +230,15 @@ export function migrateOldMap(old) {
       continue;
     }
     if (fromType === 'finding' && toType === 'method') {
-      const studies = methodStudies.get(e.to);
-      if (studies?.size === 1) push(e.from, 'yields', [...studies][0]);
-      else report.droppedEdges.push(`${describe} (method serves ${studies?.size ?? 0} studies)`);
+      // substantive results route to the method's study as yields; checks and
+      // diagnostics stay on the method as v1.1's validates
+      if (/yield/.test(String(e.rel ?? '').toLowerCase())) {
+        const studies = methodStudies.get(e.to);
+        if (studies?.size === 1) push(e.from, 'yields', [...studies][0]);
+        else report.droppedEdges.push(`${describe} (method serves ${studies?.size ?? 0} studies)`);
+      } else {
+        push(e.from, 'validates', e.to);
+      }
       continue;
     }
     const mapped = mapEdge(e.rel, fromType, toType);
