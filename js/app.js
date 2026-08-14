@@ -5,7 +5,7 @@
 
 import { NODE_TYPES, validateGraph, upgradeGraph, edgeKey } from './schema.js';
 import { lint } from './lint.js';
-import { createLayout } from './layout.js';
+import { createLayout, separateRects } from './layout.js';
 import { createView } from './view.js';
 import { createRenderer, renderPanel, renderLintPanel } from './render.js';
 import { createForms, slugify } from './forms.js';
@@ -592,6 +592,7 @@ function buildFilterChips() {
 $('zoom-in').addEventListener('click', () => view.zoomIn());
 $('zoom-out').addEventListener('click', () => view.zoomOut());
 $('fit').addEventListener('click', () => view.fit(renderer.bounds(state.positions)));
+$('relayout').addEventListener('click', () => startLayout());
 
 // ---- layout ----------------------------------------------------------------
 
@@ -641,8 +642,12 @@ function adoptGraph(graph) {
     && graph.nodes.every((n) => Number.isFinite(n.x) && Number.isFinite(n.y));
   if (stored) {
     state.positions = new Map(graph.nodes.map((n) => [n.id, { x: n.x, y: n.y }]));
+    // stored arrangements predate layout improvements; heal any overlap
+    // in place rather than showing a crowded graph forever
+    const healed = separateRects(state.positions, renderer.sizes);
     renderer.position(state.positions);
     view.fit(renderer.bounds(state.positions), { animate: false });
+    if (healed) persist();
   } else if (graph.nodes.length > 0) {
     startLayout();
   } else {

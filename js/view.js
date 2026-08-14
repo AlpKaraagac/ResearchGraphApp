@@ -2,7 +2,7 @@
 // fingers pinch-zoom, wheel zooms around the cursor. A drag is only treated
 // as a drag after 6px of movement, so taps on node cards still click.
 
-const SCALE_MIN = 0.12;
+const SCALE_MIN = 0.05; // low enough that Fit can show a large map on a phone
 const SCALE_MAX = 2.5;
 const DRAG_THRESHOLD = 6;
 const GRID = 24; // must match the canvas background-size in app.css
@@ -158,6 +158,9 @@ export function createView(canvas, viewport) {
     // animate: false jumps immediately — used on load, where there is no
     // meaningful prior view to ease from.
     fit(bounds, { pad = 48, animate = true } = {}) {
+      // a hidden or collapsing tab reports a zero-size canvas; fitting against
+      // it would park the graph at the origin — skip and let the next Fit win
+      if (canvas.clientWidth === 0 || canvas.clientHeight === 0) return;
       const w = bounds.maxX - bounds.minX;
       const h = bounds.maxY - bounds.minY;
       if (w <= 0 || h <= 0) {

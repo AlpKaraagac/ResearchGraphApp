@@ -4,6 +4,52 @@
 // settle them. settle() runs to completion synchronously — the same graph
 // always produces the same arrangement.
 
+// Exact de-overlap on card rectangles: repeatedly push each overlapping pair
+// apart along the axis of least overlap until no pair overlaps or the
+// iteration cap is hit. Standalone so it can also heal a graph whose STORED
+// positions are crowded — positions persist with the graph, so a layout
+// improvement never reaches an already-saved arrangement unless this runs on
+// load too. Mutates the positions map; returns whether anything moved.
+export function separateRects(positions, sizes, pad = 14) {
+  const ids = [...positions.keys()];
+  const count = ids.length;
+  const px = ids.map((id) => positions.get(id).x);
+  const py = ids.map((id) => positions.get(id).y);
+  const halfW = ids.map((id) => (sizes.get(id)?.w ?? 170) / 2);
+  const halfH = ids.map((id) => (sizes.get(id)?.h ?? 70) / 2);
+
+  let movedEver = false;
+  for (let iter = 0; iter < 300; iter++) {
+    let moved = false;
+    for (let i = 0; i < count; i++) {
+      for (let j = i + 1; j < count; j++) {
+        let dx = px[j] - px[i];
+        let dy = py[j] - py[i];
+        if (dx === 0 && dy === 0) { dx = (i - j) * 0.17; dy = 0.19; }
+        const overlapX = halfW[i] + halfW[j] + pad - Math.abs(dx);
+        const overlapY = halfH[i] + halfH[j] + pad - Math.abs(dy);
+        if (overlapX <= 0 || overlapY <= 0) continue;
+        moved = true;
+        if (overlapX < overlapY) {
+          const shift = (dx >= 0 ? 1 : -1) * (overlapX / 2 + 0.5);
+          px[i] -= shift;
+          px[j] += shift;
+        } else {
+          const shift = (dy >= 0 ? 1 : -1) * (overlapY / 2 + 0.5);
+          py[i] -= shift;
+          py[j] += shift;
+        }
+      }
+    }
+    movedEver = movedEver || moved;
+    if (!moved) break;
+  }
+  if (movedEver) {
+    ids.forEach((id, i) => positions.set(id, { x: px[i], y: py[i] }));
+  }
+  return movedEver;
+}
+
 const GOLDEN_ANGLE = 2.399963229728653;
 const SPIRAL_SPACING = 130;
 const REPULSION = 52000;
@@ -97,43 +143,17 @@ export function createLayout(ids, edges, { radii, sizes } = {}) {
     if (alpha < ALPHA_MIN) alpha = 0;
   }
 
-  // Exact de-overlap: repeatedly push the members of each overlapping card
-  // pair apart along the axis of least overlap, until no pair overlaps or the
-  // iteration cap is hit. Runs after the forces have settled, so it only nudges
-  // a locally-crowded arrangement rather than fighting the springs.
-  const OVERLAP_PAD = 14;
-  function resolveOverlaps() {
-    for (let iter = 0; iter < 300; iter++) {
-      let moved = false;
-      for (let i = 0; i < count; i++) {
-        for (let j = i + 1; j < count; j++) {
-          let dx = px[j] - px[i];
-          let dy = py[j] - py[i];
-          if (dx === 0 && dy === 0) { dx = (i - j) * 0.17; dy = 0.19; }
-          const overlapX = halfW[i] + halfW[j] + OVERLAP_PAD - Math.abs(dx);
-          const overlapY = halfH[i] + halfH[j] + OVERLAP_PAD - Math.abs(dy);
-          if (overlapX <= 0 || overlapY <= 0) continue;
-          moved = true;
-          if (overlapX < overlapY) {
-            const shift = (dx >= 0 ? 1 : -1) * (overlapX / 2 + 0.5);
-            px[i] -= shift;
-            px[j] += shift;
-          } else {
-            const shift = (dy >= 0 ? 1 : -1) * (overlapY / 2 + 0.5);
-            py[i] -= shift;
-            py[j] += shift;
-          }
-        }
-      }
-      if (!moved) break;
-    }
-  }
-
   return {
     settle() {
       let guard = 2000;
       while (alpha > 0 && guard-- > 0) tick();
-      resolveOverlaps();
+      const positions = new Map();
+      ids.forEach((id, i) => positions.set(id, { x: px[i], y: py[i] }));
+      separateRects(positions, sizes ?? new Map());
+      ids.forEach((id, i) => {
+        px[i] = positions.get(id).x;
+        py[i] = positions.get(id).y;
+      });
     },
     positions() {
       const out = new Map();

@@ -34,6 +34,7 @@ import {
   emptyGraph, edgeKey, validateNode, validateEdge, validateGraph, upgradeGraph,
 } from './js/schema.js';
 import { LINT_RULES, lint } from './js/lint.js';
+import { separateRects } from './js/layout.js';
 import { ID_PREFIXES, slugify, uniqueNodeId, directedRelationOptions } from './js/forms.js';
 import { toCanvas, fromCanvas, looksLikeCanvas, extractGraphFromHtml, importText } from './js/exporter.js';
 import {
@@ -732,6 +733,47 @@ test('upgradeGraph defaults missing claim kinds to empirical and leaves the rest
 test('lint tolerates edges whose endpoints are missing', () => {
   const graph = g([n('c1', 'claim', 'provisional')], [e('ghost', 'supports', 'c1')]);
   assertDeepEqual(flagged(graph, 'unsupported-claim'), ['c1']);
+});
+
+// ---- layout: rectangle separation ----------------------------------------
+
+describe('Layout — separateRects');
+
+const overlapping = (positions, sizes, pad = 0) => {
+  const ids = [...positions.keys()];
+  let count = 0;
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i + 1; j < ids.length; j++) {
+      const a = positions.get(ids[i]); const b = positions.get(ids[j]);
+      const sa = sizes.get(ids[i]); const sb = sizes.get(ids[j]);
+      if (Math.abs(a.x - b.x) < (sa.w + sb.w) / 2 + pad
+        && Math.abs(a.y - b.y) < (sa.h + sb.h) / 2 + pad) count += 1;
+    }
+  }
+  return count;
+};
+
+test('an overlapping pair is pushed apart; a clear pair is untouched', () => {
+  const sizes = new Map([['a', { w: 100, h: 40 }], ['b', { w: 100, h: 40 }]]);
+  const crowded = new Map([['a', { x: 0, y: 0 }], ['b', { x: 30, y: 5 }]]);
+  assert(separateRects(crowded, sizes) === true, 'reports movement');
+  assertEqual(overlapping(crowded, sizes), 0);
+
+  const clear = new Map([['a', { x: 0, y: 0 }], ['b', { x: 500, y: 0 }]]);
+  const before = JSON.stringify([...clear]);
+  assert(separateRects(clear, sizes) === false, 'reports no movement');
+  assertEqual(JSON.stringify([...clear]), before, 'positions untouched');
+});
+
+test('a pile of coincident cards fully separates', () => {
+  const sizes = new Map();
+  const positions = new Map();
+  for (let i = 0; i < 12; i++) {
+    sizes.set(`n${i}`, { w: 180, h: 60 });
+    positions.set(`n${i}`, { x: 0, y: 0 });
+  }
+  separateRects(positions, sizes);
+  assertEqual(overlapping(positions, sizes), 0, 'twelve stacked cards end up disjoint');
 });
 
 // ---- edit helpers --------------------------------------------------------
