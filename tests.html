@@ -144,12 +144,12 @@ test('isNodeType / statusesFor', () => {
 
 describe('Schema — relations');
 
-test('exactly the twenty-one relations of SCHEMA.md section 3 (v1.1)', () => {
+test('exactly the twenty-four relations of SCHEMA.md section 3 (v1.2)', () => {
   assertDeepEqual([...RELATION_NAMES].sort(), [
     'addresses', 'answers', 'asks', 'blocks', 'bounds', 'builds-on', 'composes',
-    'contradicts', 'converges', 'documents', 'extends', 'grounds', 'inspires',
-    'invalidates', 'motivates', 'qualifies', 'supports', 'threatens', 'uses',
-    'validates', 'yields',
+    'contradicts', 'converges', 'documents', 'examines', 'explains', 'extends',
+    'frames', 'grounds', 'inspires', 'invalidates', 'motivates', 'qualifies',
+    'supports', 'threatens', 'uses', 'validates', 'yields',
   ]);
 });
 
@@ -183,6 +183,17 @@ test('from → to constraints hold for every listed pair', () => {
   assert(relationAllows('grounds', 'source', 'gap'));
   assert(relationAllows('grounds', 'source', 'claim'));
   assert(relationAllows('grounds', 'source', 'question'));
+  assert(relationAllows('grounds', 'construct', 'gap'));
+  assert(relationAllows('grounds', 'construct', 'claim'));
+  assert(relationAllows('grounds', 'construct', 'question'));
+  assert(relationAllows('examines', 'study', 'finding'));
+  assert(relationAllows('frames', 'construct', 'question'));
+  assert(relationAllows('frames', 'construct', 'study'));
+  assert(relationAllows('frames', 'construct', 'method'));
+  assert(relationAllows('frames', 'construct', 'gap'));
+  assert(relationAllows('frames', 'construct', 'construct'));
+  assert(relationAllows('explains', 'construct', 'finding'));
+  assert(relationAllows('explains', 'construct', 'claim'));
   assert(relationAllows('documents', 'source', 'material'));
   assert(relationAllows('builds-on', 'source', 'source'));
   assert(relationAllows('threatens', 'source', 'claim'));
@@ -214,6 +225,11 @@ test('constraints reject direction flips and off-schema pairs', () => {
   assert(!relationAllows('composes', 'claim', 'question'));
   assert(!relationAllows('documents', 'source', 'study'));
   assert(!relationAllows('threatens', 'source', 'question'), 'threatens still stops at claims and gaps');
+  assert(!relationAllows('grounds', 'construct', 'construct'), 'construct-to-construct is frames, not grounds');
+  assert(!relationAllows('frames', 'construct', 'finding'), 'a construct explains a finding, never frames it');
+  assert(!relationAllows('frames', 'source', 'question'), 'frames is for constructs');
+  assert(!relationAllows('examines', 'finding', 'study'), 'examines runs study → finding');
+  assert(!relationAllows('explains', 'source', 'finding'), 'explains is for constructs');
   assert(!relationAllows('made-up', 'finding', 'claim'), 'unknown relation');
 });
 
@@ -229,9 +245,16 @@ test('validRelations lists exactly the legal edges between two types', () => {
   assertDeepEqual(validRelations('finding', 'finding'), ['invalidates', 'supports', 'contradicts', 'bounds']);
   assertDeepEqual(validRelations('finding', 'study'), ['motivates', 'yields', 'validates']);
   assertDeepEqual(validRelations('study', 'study'), ['extends']);
-  assertDeepEqual(validRelations('study', 'finding'), ['invalidates']);
+  assertDeepEqual(validRelations('study', 'finding'), ['examines', 'invalidates']);
   assertDeepEqual(validRelations('claim', 'claim'), ['composes']);
   assertDeepEqual(validRelations('claim', 'study'), ['motivates']);
+  assertDeepEqual(validRelations('construct', 'question'), ['grounds', 'frames']);
+  assertDeepEqual(validRelations('construct', 'gap'), ['grounds', 'frames']);
+  assertDeepEqual(validRelations('construct', 'claim'), ['grounds', 'explains']);
+  assertDeepEqual(validRelations('construct', 'construct'), ['frames']);
+  assertDeepEqual(validRelations('construct', 'finding'), ['explains']);
+  assertDeepEqual(validRelations('construct', 'study'), ['frames']);
+  assertDeepEqual(validRelations('construct', 'method'), ['frames']);
   assertDeepEqual(validRelations('note', 'material'), ['qualifies']);
   assertDeepEqual(validRelations('claim', 'finding'), [], 'nothing runs claim → finding');
   assertDeepEqual(validRelations('material', 'question'), [], 'nothing runs material → question');
@@ -414,6 +437,14 @@ test('converges is not grounds, and empirical claims never trigger rule 9', () =
   );
   assertDeepEqual(flagged(converged, 'ungrounded-argument'), ['c1']);
   assertDeepEqual(flagged(g([n('c2', 'claim', 'provisional')]), 'ungrounded-argument'), []);
+});
+
+test('v1.2: a construct grounding an argued claim satisfies rule 9', () => {
+  const graph = g(
+    [n('c1', 'claim', 'provisional', { kind: 'argued' }), n('k1', 'construct')],
+    [e('k1', 'grounds', 'c1')],
+  );
+  assertDeepEqual(flagged(graph, 'ungrounded-argument'), []);
 });
 
 describe('Lint rule 2 — orphan finding');
@@ -824,6 +855,7 @@ const oldMap = {
     { id: 'ex1', type: 'experiment', status: 'sealed', label: 'Sealed experiment' },
     { id: 'm1', type: 'method', label: 'The method' },
     { id: 'r1', type: 'result', status: 'established', label: 'The result', fields: { p: '.01' } },
+    { id: 'r2', type: 'result', status: 'established', label: 'The diagnostic' },
     { id: 'cl1', type: 'claim', status: 'established', label: 'The claim' },
     { id: 'p1', type: 'paper', status: 'todo', label: 'A paper' },
     { id: 'cor1', type: 'corpus', status: 'established', label: 'The corpus' },
@@ -846,6 +878,9 @@ const oldMap = {
     { from: 'con1', to: 'rq0', rel: 'variance source' },
     { from: 'v1', to: 'rq0', rel: 'venue target' },
     { from: 'r1', to: 'ex1', rel: 'headline finding' },
+    { from: 'r2', to: 'm1', rel: 'validation' },
+    { from: 'ex1', to: 'r1', rel: 'replicates' },
+    { from: 'con1', to: 'r1', rel: 'explains the failure' },
   ],
 };
 
@@ -907,17 +942,36 @@ test('edges map by type pair: asks, addresses, uses, supports, answers, blocks',
   assert(has('v1', 'blocks', 'rq0'), 'the venue-task blocks the question');
 });
 
-test('finding→method edges are routed to the method’s study; flips and drops are reported', () => {
-  const { graph, report } = migrateOldMap(oldMap);
+test('finding→method edges are routed to the method’s study; flips are honoured', () => {
+  const { graph } = migrateOldMap(oldMap);
   const has = (from, relation, to) => graph.edges.some(
     (e) => e.from === from && e.relation === relation && e.to === to,
   );
   assert(has('r1', 'yields', 'ex1'), 'r1 —yields→ m1 became r1 —yields→ ex1');
   assert(has('r1', 'supports', 'cl1'), 'cl1 —generalises→ r1 flipped into finding-supports-claim');
-  assert(report.droppedEdges.some((d) => d.includes('con1')),
-    'the construct → question edge is dropped and reported');
   assertEqual(graph.edges.filter((e) => e.from === 'r1' && e.to === 'ex1').length, 1,
     'yields deduplicated against the headline-finding edge');
+});
+
+test('v1.2: validation results route as yields too — validates edges are hand additions', () => {
+  const { graph } = migrateOldMap(oldMap);
+  const has = (from, relation, to) => graph.edges.some(
+    (e) => e.from === from && e.relation === relation && e.to === to,
+  );
+  assert(has('r2', 'yields', 'ex1'), 'the diagnostic keeps its production edge');
+  assert(!graph.edges.some((e) => e.relation === 'validates'),
+    'migration never invents a validates edge');
+});
+
+test('v1.2: construct edges map to frames/explains; study replications to examines', () => {
+  const { graph, report } = migrateOldMap(oldMap);
+  const has = (from, relation, to) => graph.edges.some(
+    (e) => e.from === from && e.relation === relation && e.to === to,
+  );
+  assert(has('con1', 'frames', 'rq0'), 'construct → question is frames now');
+  assert(has('con1', 'explains', 'r1'), 'construct → finding is explains');
+  assert(has('ex1', 'examines', 'r1'), 'a replication examines its object');
+  assertEqual(report.droppedEdges.length, 0, 'nothing in this fixture drops any more');
 });
 
 test('importText migrates an old map end to end', () => {

@@ -78,7 +78,7 @@ export const LINT_RULES = [
     id: 'ungrounded-argument',
     severity: 'error',
     title: 'Argued claim with no grounds',
-    description: 'An argued claim with no incoming grounds. An argument with no literature under it is an assertion.',
+    description: 'An argued claim with no incoming grounds from a source or construct. An argument with no literature under it is an assertion.',
   },
 ];
 
@@ -130,7 +130,7 @@ export function lint(graph) {
     if (node.type === 'claim') {
       if (node.kind === 'argued') {
         const grounded = inOf(node.id).some(
-          (e) => e.relation === 'grounds' && typeOf(e.from) === 'source',
+          (e) => e.relation === 'grounds' && ['source', 'construct'].includes(typeOf(e.from)),
         );
         if (!grounded) {
           report('ungrounded-argument', node, `"${node.label}" is argued but nothing grounds it`);

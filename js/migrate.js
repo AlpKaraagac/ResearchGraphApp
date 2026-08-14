@@ -108,8 +108,15 @@ function mapEdge(relRaw, fromType, toType) {
   if (fromType === 'study' && toType === 'question') return { relation: 'addresses' };
   if (fromType === 'study' && toType === 'study') return { relation: 'extends' };
   if (fromType === 'study' && toType === 'finding') {
-    // "invalidates" is exactly v1.1's relation; tests/replicates has no home
-    return /invalidat/.test(rel) ? { relation: 'invalidates' } : null;
+    // invalidates for retractions; examines (v1.2) for tests and replications
+    // whose object is the earlier result
+    return { relation: /invalidat/.test(rel) ? 'invalidates' : 'examines' };
+  }
+  if (fromType === 'construct') {
+    if (toType === 'finding' || toType === 'claim') return { relation: 'explains' };
+    if (['question', 'study', 'method', 'gap', 'construct'].includes(toType)) {
+      return { relation: 'frames' };
+    }
   }
   if ((fromType === 'method' || fromType === 'material') && toType === 'study') {
     return { relation: 'uses' };
@@ -230,15 +237,12 @@ export function migrateOldMap(old) {
       continue;
     }
     if (fromType === 'finding' && toType === 'method') {
-      // substantive results route to the method's study as yields; checks and
-      // diagnostics stay on the method as v1.1's validates
-      if (/yield/.test(String(e.rel ?? '').toLowerCase())) {
-        const studies = methodStudies.get(e.to);
-        if (studies?.size === 1) push(e.from, 'yields', [...studies][0]);
-        else report.droppedEdges.push(`${describe} (method serves ${studies?.size ?? 0} studies)`);
-      } else {
-        push(e.from, 'validates', e.to);
-      }
+      // Every result routes to the method's study as yields. SCHEMA.md §8
+      // (v1.2): validates edges are additions the migration cannot infer —
+      // the author adds them by hand afterwards.
+      const studies = methodStudies.get(e.to);
+      if (studies?.size === 1) push(e.from, 'yields', [...studies][0]);
+      else report.droppedEdges.push(`${describe} (method serves ${studies?.size ?? 0} studies)`);
       continue;
     }
     const mapped = mapEdge(e.rel, fromType, toType);

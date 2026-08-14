@@ -99,7 +99,8 @@ A closed set. Free-text relations kill validation, and validation is the feature
 | `uses` | method → study, material → study | |
 | `yields` | finding → study | |
 | `extends` | study → study | a follow-up sharing the design |
-| `validates` | finding → method, finding → study | a diagnostic or check result, not a substantive one |
+| `examines` | study → finding | a follow-up, replication or robustness check whose object is an earlier result |
+| `validates` | finding → method, finding → study | a diagnostic, check, gate or accounting result — construction costs, convergence checks, coverage figures — rather than a substantive one |
 | `invalidates` | finding → finding, study → finding | this result retracts or breaks that one |
 | `supports` | finding → claim, finding → finding | |
 | `contradicts` | finding → claim, finding → finding, source → claim, source → finding | |
@@ -108,7 +109,9 @@ A closed set. Free-text relations kill validation, and validation is the feature
 | `answers` | claim → question | |
 | `composes` | claim → claim | a component of a larger claim |
 | `qualifies` | note → anything | |
-| `grounds` | source → construct, source → gap, source → claim, source → question | |
+| `grounds` | source → gap, claim, question, construct; construct → gap, claim, question | theoretical warrant |
+| `frames` | construct → question, study, method, gap, construct | this concept is what the question or the design is about |
+| `explains` | construct → finding, claim | a theoretical account of why a result came out the way it did |
 | `documents` | source → material | the paper the dataset comes from |
 | `builds-on` | source → source | literature structure: defends, deploys, replies to |
 | `threatens` | source → claim, source → gap | |
@@ -122,6 +125,12 @@ paper that occupies your territory, the result that undercuts your claim.
 `validates`, every diagnostic and robustness check in a project reads as an orphan finding.
 Without `converges`, there is nowhere to put the sentence "our null matches theirs", which
 in practice is one of the most-written sentences in any discussion section.
+
+`frames` and `explains` were added in v1.2 for the same reason in reverse. Until then
+constructs could be grounded but could not reach anything, which made the theory layer
+decorative: a concept could be defined and cited and then had no way to say which question
+it was a component of, which design it motivated, or which result it accounted for. A
+construct that cannot touch the work is not doing any.
 
 ---
 
@@ -226,6 +235,18 @@ a source comment on a result — which was a genuine hole, now filled by `conver
 ---
 
 ## 8. Changelog
+
+**v1.2** — second revision, after re-migrating the same map under v1.1.
+
+- Constructs can now reach the rest of the graph: added `frames` (construct → question,
+  study, method, gap, construct) and `explains` (construct → finding, claim), and widened
+  `grounds` to take a construct as its source, which is what lint rule 9 already assumed.
+- Added `examines` (study → finding) for follow-ups and replications whose object is an
+  earlier result, as distinct from `extends`, which shares a design rather than a target.
+- Broadened `validates` to cover accounting and gate results, not only checks.
+- Note on migration: `validates` edges are additions, not replacements. A diagnostic finding
+  keeps its `yields` edge to the study that produced it and gains a `validates` edge to the
+  method it vouches for. Migration cannot infer these; add them by hand afterwards.
 
 **v1.1** — first revision after migrating a real thesis map (176 nodes, 267 edges).
 
