@@ -92,7 +92,7 @@ button {
   font-weight: 700;
 }
 
-#json-btn {
+.bar-btn {
   min-height: 40px;
   padding: 0 10px;
   border: 1px solid var(--line);
@@ -100,7 +100,21 @@ button {
   background: var(--surface);
   font-size: 12.5px;
   cursor: pointer;
+  white-space: nowrap;
 }
+
+.badge {
+  display: inline-block;
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: #c22929;
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-align: center;
+}
+.badge.clean { background: #1a7f37; }
 
 #search {
   flex: 1;
@@ -338,9 +352,9 @@ button {
 }
 #add-node-btn:active { transform: scale(0.96); }
 
-/* ---- detail panel: bottom sheet by default ----------------------------- */
+/* ---- side panels: bottom sheets by default ------------------------------ */
 
-#detail {
+.sheet {
   position: absolute;
   left: 0;
   right: 0;
@@ -379,7 +393,7 @@ button {
   color: var(--type-color, var(--muted));
 }
 
-#detail-close {
+.close-x {
   margin-left: auto;
   min-width: 40px;
   min-height: 40px;
@@ -409,7 +423,8 @@ button {
 #detail-fields dd { margin: 0; overflow-wrap: anywhere; }
 #detail-fields a { color: var(--accent); }
 
-#detail h3 {
+#detail h3,
+#lint-list h3 {
   margin: 12px 0 4px;
   font-size: 11px;
   font-weight: 700;
@@ -417,6 +432,39 @@ button {
   text-transform: uppercase;
   color: var(--muted);
 }
+
+/* ---- lint panel --------------------------------------------------------- */
+
+.lint-title { margin: 0; font-size: 16px; }
+
+.lint-clean {
+  margin: 8px 0;
+  font-size: 13.5px;
+  color: #14572c;
+}
+
+#lint-list .rule-desc {
+  margin: 0 0 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.lint-row {
+  display: block;
+  width: 100%;
+  min-height: 42px;
+  margin-bottom: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  font-size: 12.5px;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.lint-row:active { background: var(--bg); }
 
 .panel-actions {
   display: flex;
@@ -513,7 +561,7 @@ button.danger { color: #8f1d1d; border-color: #e0b4b4; }
   #search { max-width: 24rem; }
   #type-filters { flex-wrap: wrap; overflow: visible; }
 
-  #detail {
+  .sheet {
     left: auto;
     top: 12px;
     right: 12px;
@@ -659,6 +707,24 @@ dialog form { display: flex; flex-direction: column; }
   border-color: #c22929;
   color: #fff;
 }
+
+.share-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.share-actions button {
+  min-height: 46px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.share-actions button:active { background: var(--bg); }
 
 #confirm-body { font-size: 13.5px; }
 #confirm-body ul {

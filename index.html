@@ -13,7 +13,8 @@
     <h1 id="graph-title">Research graph</h1>
     <span id="save-indicator" aria-live="polite"></span>
     <span class="spacer"></span>
-    <button id="json-btn" type="button">JSON</button>
+    <button id="lint-btn" type="button" class="bar-btn">Lint <span id="lint-badge" class="badge">0</span></button>
+    <button id="share-btn" type="button" class="bar-btn">Share</button>
     <div class="view-controls" role="group" aria-label="View controls">
       <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
       <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
@@ -43,12 +44,20 @@
     <p id="empty-message"></p>
   </div>
   <button id="add-node-btn" type="button" aria-label="Add node">＋</button>
-  <aside id="detail" hidden aria-label="Node details">
+  <aside id="lint-panel" class="sheet" hidden aria-label="Lint findings">
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <header class="detail-head">
+      <h2 class="lint-title">Lint</h2>
+      <button id="lint-close" type="button" class="close-x" aria-label="Close lint">×</button>
+    </header>
+    <div id="lint-list"></div>
+  </aside>
+  <aside id="detail" class="sheet" hidden aria-label="Node details">
     <div class="sheet-handle" aria-hidden="true"></div>
     <header class="detail-head">
       <span id="detail-type" class="type-tag"></span>
       <span id="detail-status" class="status" hidden></span>
-      <button id="detail-close" type="button" aria-label="Close details">×</button>
+      <button id="detail-close" type="button" class="close-x" aria-label="Close details">×</button>
     </header>
     <h2 id="detail-label"></h2>
     <div class="panel-actions">
@@ -121,6 +130,23 @@
     <button type="button" id="confirm-ok" class="primary danger">Delete</button>
   </div>
 </dialog>
+
+<dialog id="share-dialog">
+  <h2>Share &amp; data</h2>
+  <div class="share-actions">
+    <button type="button" id="export-json">Download graph JSON</button>
+    <button type="button" id="export-canvas">Download JSON Canvas (.canvas)</button>
+    <button type="button" id="export-html">Download self-contained HTML</button>
+    <button type="button" id="import-btn">Import JSON or .canvas…</button>
+    <button type="button" id="json-btn">Edit raw JSON</button>
+  </div>
+  <p id="share-info" class="hint" hidden></p>
+  <p id="share-error" class="form-error" hidden></p>
+  <div class="dialog-actions">
+    <button type="button" data-close>Close</button>
+  </div>
+</dialog>
+<input type="file" id="import-input" accept=".json,.canvas,application/json" hidden>
 
 <dialog id="json-dialog" class="dialog-full">
   <form id="json-form">
