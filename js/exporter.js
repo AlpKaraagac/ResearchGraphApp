@@ -171,7 +171,8 @@ export function importText(text) {
 // CDNs — the file opens anywhere. Order matters only for readability; the
 // import map resolves dependencies by name.
 const MODULE_NAMES = [
-  'schema', 'lint', 'layout', 'store', 'view', 'render', 'forms', 'exporter', 'app',
+  'schema', 'lint', 'layout', 'store', 'view', 'render', 'forms', 'sources',
+  'exporter', 'app',
 ];
 
 async function fetchText(path) {

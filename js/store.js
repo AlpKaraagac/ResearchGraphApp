@@ -25,6 +25,24 @@ export function loadCurrent() {
   }
 }
 
+// Device-local app settings (e.g. the Zotero key and library ID). Nothing
+// here ever leaves the browser.
+const SETTINGS_KEY = 'rg.settings';
+
+export function loadSettings() {
+  try {
+    return JSON.parse(localStorage.getItem(SETTINGS_KEY)) ?? {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveSettings(patch) {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...loadSettings(), ...patch }));
+  } catch { /* settings are a convenience; losing them is harmless */ }
+}
+
 export function save(graph) {
   try {
     const id = graph.meta?.id;

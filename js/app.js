@@ -10,6 +10,9 @@ import { createView } from './view.js';
 import { createRenderer, renderPanel, renderLintPanel } from './render.js';
 import { createForms, slugify } from './forms.js';
 import { toCanvas, importText, buildSelfContainedHtml, download } from './exporter.js';
+import {
+  parseSourcesText, planSourceImport, applySourcePatch, zoteroPull,
+} from './sources.js';
 import * as store from './store.js';
 
 const $ = (id) => document.getElementById(id);
@@ -41,6 +44,15 @@ const ui = {
   shareInfo: $('share-info'),
   shareError: $('share-error'),
   importInput: $('import-input'),
+  sourcesDialog: $('sources-dialog'),
+  sourcesText: $('sources-text'),
+  sourcesResult: $('sources-result'),
+  sourcesError: $('sources-error'),
+  sourcesFileInput: $('sources-file-input'),
+  zoteroKey: $('zotero-key'),
+  zoteroType: $('zotero-type'),
+  zoteroId: $('zotero-id'),
+  zoteroPullBtn: $('zotero-pull'),
 };
 
 const state = {
@@ -350,6 +362,148 @@ ui.importInput.addEventListener('change', async () => {
   adoptGraph(result.graph);
   persist();
   shareMessage(result.message);
+});
+
+// ---- sources import --------------------------------------------------------
+
+function sourcesMessage(text, isError = false) {
+  ui.sourcesResult.hidden = isError || !text;
+  ui.sourcesError.hidden = !isError || !text;
+  (isError ? ui.sourcesError : ui.sourcesResult).textContent = text;
+}
+
+function openSourcesDialog() {
+  ui.shareDialog.close();
+  const settings = store.loadSettings();
+  ui.zoteroKey.value = settings.zoteroKey ?? '';
+  ui.zoteroType.value = settings.zoteroType ?? 'user';
+  ui.zoteroId.value = settings.zoteroId ?? '';
+  sourcesMessage('');
+  ui.sourcesDialog.showModal();
+}
+
+// Applies a planned import: updates in place, creates fanned out around the
+// current view centre so a big batch doesn't land in one pile.
+function applySourceImport(plan) {
+  for (const { id, patch } of plan.updates) {
+    const node = nodeById(id);
+    if (!node) continue;
+    applySourcePatch(node, patch);
+    renderer.updateNode(node);
+  }
+  const centre = view.worldCenter();
+  plan.creates.forEach((node, i) => {
+    state.graph.nodes.push(node);
+    const angle = i * 2.399963229728653;
+    const radius = 60 * Math.sqrt(i + 0.5);
+    state.positions.set(node.id, {
+      x: centre.x + Math.cos(angle) * radius,
+      y: centre.y + Math.sin(angle) * radius,
+    });
+    renderer.addNode(node);
+  });
+  renderer.position(state.positions);
+  buildFilterChips();
+  refreshEmptyState();
+  applyVisibility();
+  if (state.selected) select(state.selected);
+  persist();
+}
+
+function runSourcesImport(items, ignored, origin) {
+  const plan = planSourceImport(state.graph, items);
+  applySourceImport(plan);
+  const parts = [
+    `${plan.creates.length} new source${plan.creates.length === 1 ? '' : 's'}`,
+    `${plan.updates.length} updated`,
+  ];
+  if (plan.skipped > 0) parts.push(`${plan.skipped} duplicate${plan.skipped === 1 ? '' : 's'} skipped`);
+  if (ignored > 0) parts.push(`${ignored} item${ignored === 1 ? '' : 's'} without title or author ignored`);
+  sourcesMessage(`${origin}: ${parts.join(', ')}.`);
+}
+
+function importSourcesFromText(text, origin = 'Imported') {
+  let parsed;
+  try {
+    parsed = parseSourcesText(text);
+  } catch (error) {
+    sourcesMessage(error.message, true);
+    return;
+  }
+  runSourcesImport(parsed.items, parsed.ignored, origin);
+}
+
+$('import-sources-btn').addEventListener('click', openSourcesDialog);
+
+$('sources-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  importSourcesFromText(ui.sourcesText.value);
+});
+
+$('sources-file-btn').addEventListener('click', () => ui.sourcesFileInput.click());
+ui.sourcesFileInput.addEventListener('change', async () => {
+  const file = ui.sourcesFileInput.files?.[0];
+  ui.sourcesFileInput.value = '';
+  if (!file) return;
+  const text = await file.text();
+  ui.sourcesText.value = text;
+  importSourcesFromText(text, `Imported from ${file.name}`);
+});
+
+ui.zoteroPullBtn.addEventListener('click', async () => {
+  const config = {
+    key: ui.zoteroKey.value.trim(),
+    libraryType: ui.zoteroType.value,
+    libraryId: ui.zoteroId.value.trim(),
+  };
+  store.saveSettings({
+    zoteroKey: config.key, zoteroType: config.libraryType, zoteroId: config.libraryId,
+  });
+  ui.zoteroPullBtn.disabled = true;
+  ui.zoteroPullBtn.textContent = 'Pulling…';
+  try {
+    const items = await zoteroPull(config);
+    const usable = items.filter((it) => it && typeof it === 'object' && (it.title || it.author));
+    runSourcesImport(usable, items.length - usable.length, 'Pulled from Zotero');
+  } catch (error) {
+    sourcesMessage(error.message, true);
+  } finally {
+    ui.zoteroPullBtn.disabled = false;
+    ui.zoteroPullBtn.textContent = 'Pull items from Zotero';
+  }
+});
+
+// ---- drag and drop ---------------------------------------------------------
+
+// Dropping a file or text anywhere routes by content: graph or canvas JSON
+// replaces the graph; CSL-JSON or BibTeX goes through the sources import.
+window.addEventListener('dragover', (event) => event.preventDefault());
+window.addEventListener('drop', async (event) => {
+  event.preventDefault();
+  const file = event.dataTransfer?.files?.[0];
+  const text = file ? await file.text() : event.dataTransfer?.getData('text/plain');
+  if (!text?.trim()) return;
+
+  let parsed = null;
+  try {
+    parsed = JSON.parse(text);
+  } catch { /* not JSON — fall through to the sources path */ }
+  if (parsed && Array.isArray(parsed.nodes)) {
+    const result = importText(text);
+    $('export-html').hidden = isEmbeddedCopy;
+    ui.shareDialog.showModal();
+    if (result.ok) {
+      adoptGraph(result.graph);
+      persist();
+      shareMessage(result.message);
+    } else {
+      shareMessage(result.message, true);
+    }
+    return;
+  }
+  openSourcesDialog();
+  ui.sourcesText.value = text;
+  importSourcesFromText(text, file ? `Imported from ${file.name}` : 'Imported from drop');
 });
 $('detail-edit').addEventListener('click', () => {
   const node = nodeById(state.selected);
