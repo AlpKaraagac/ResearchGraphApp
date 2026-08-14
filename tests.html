@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Research graph — tests</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    max-width: 46rem; margin: 0 auto; padding: 1rem;
+  }
+  h1 { font-size: 1.2rem; }
+  #summary { font-weight: 600; padding: .5rem .75rem; border-radius: .5rem; }
+  #summary.pass { background: #1a7f3722; }
+  #summary.fail { background: #cf222e22; }
+  ul { list-style: none; padding: 0; }
+  li { padding: .15rem .25rem; border-radius: .25rem; }
+  li.pass::before { content: "✓ "; color: #1a7f37; }
+  li.fail::before { content: "✗ "; color: #cf222e; }
+  li.fail { background: #cf222e18; }
+  li.fail pre { margin: .25rem 0 .25rem 1.2rem; white-space: pre-wrap; font-size: .85em; }
+  h2 { font-size: 1rem; margin: 1.25rem 0 .25rem; }
+</style>
+</head>
+<body>
+<h1>Research graph — schema and lint tests</h1>
+<p id="summary">Running…</p>
+<div id="results"></div>
+<script type="module">
+import {
+  SCHEMA_VERSION, FAMILIES, NODE_TYPES, STATUSES, RELATIONS, RELATION_NAMES,
+  isNodeType, statusesFor, isValidStatus, relationAllows, validRelations,
+  emptyGraph, edgeKey, validateNode, validateEdge, validateGraph,
+} from './js/schema.js';
+import { LINT_RULES, lint } from './js/lint.js';
+
+// ---- harness -------------------------------------------------------------
+
+const results = [];
+let section = '';
+const describe = (name) => { section = name; };
+function test(name, fn) {
+  try {
+    fn();
+    results.push({ section, name, ok: true });
+  } catch (error) {
+    results.push({ section, name, ok: false, error });
+  }
+}
+function assert(cond, message) {
+  if (!cond) throw new Error(message ?? 'assertion failed');
+}
+function assertEqual(actual, expected, message) {
+  if (actual !== expected) {
+    throw new Error(`${message ?? 'not equal'}\n  expected: ${JSON.stringify(expected)}\n  actual:   ${JSON.stringify(actual)}`);
+  }
+}
+function assertDeepEqual(actual, expected, message) {
+  const a = JSON.stringify(actual);
+  const b = JSON.stringify(expected);
+  if (a !== b) {
+    throw new Error(`${message ?? 'not deep-equal'}\n  expected: ${b}\n  actual:   ${a}`);
+  }
+}
+
+// ---- graph-building helpers ----------------------------------------------
+
+const n = (id, type, status, extra) => ({ id, type, label: `label of ${id}`, ...(status ? { status } : {}), ...extra });
+const e = (from, relation, to) => ({ from, relation, to });
+const g = (nodes, edges = []) => ({ version: 1, nodes, edges });
+
+// lint findings for one rule id, reduced to the nodeIds it flagged
+function flagged(graph, ruleId) {
+  return lint(graph).filter((f) => f.id === ruleId).map((f) => f.nodeId);
+}
+
+// ---- schema: vocabularies ------------------------------------------------
+
+describe('Schema — types and statuses');
+
+test('exactly the eleven node types, in four families', () => {
+  assertDeepEqual(NODE_TYPES, [
+    'question', 'gap', 'construct', 'source', 'study', 'method', 'material',
+    'finding', 'claim', 'note', 'task',
+  ]);
+  assertDeepEqual(Object.keys(FAMILIES), ['asking', 'grounding', 'doing', 'concluding']);
+});
+
+test('status vocabularies match SCHEMA.md section 2 exactly', () => {
+  assertDeepEqual(Object.keys(STATUSES).sort(), [...NODE_TYPES].sort(), 'every type has a vocabulary');
+  assertDeepEqual(STATUSES.question, ['open', 'answered', 'partly-answered', 'bounded', 'abandoned']);
+  assertDeepEqual(STATUSES.gap, ['asserted', 'verified', 'contested', 'closed-by-others']);
+  assertDeepEqual(STATUSES.study, ['planned', 'running', 'complete', 'abandoned']);
+  assertDeepEqual(STATUSES.finding, ['supported', 'null-with-bound', 'untestable', 'sealed', 'withdrawn', 'invalid']);
+  assertDeepEqual(STATUSES.claim, ['established', 'provisional', 'contested', 'abandoned']);
+  assertDeepEqual(STATUSES.source, ['to-read', 'read', 'verified', 'unverified']);
+  assertDeepEqual(STATUSES.method, ['draft', 'preregistered', 'run', 'superseded']);
+  assertDeepEqual(STATUSES.material, ['planned', 'collected', 'frozen']);
+  assertDeepEqual(STATUSES.note, []);
+  assertDeepEqual(STATUSES.task, ['todo', 'doing', 'done']);
+});
+
+test('construct is statusless, like note (confirmed reading of the §2 omission)', () => {
+  assertDeepEqual(STATUSES.construct, []);
+});
+
+test('isValidStatus accepts vocabulary words and rejects other types’ words', () => {
+  assert(isValidStatus('finding', 'sealed'));
+  assert(!isValidStatus('source', 'sealed'), 'sealed means nothing for a source');
+  assert(!isValidStatus('finding', 'to-read'), 'to-read means nothing for a finding');
+  assert(!isValidStatus('nonsense', 'open'), 'unknown type is invalid');
+});
+
+test('a missing status is valid for every type; a set status on note/construct is not', () => {
+  assert(isValidStatus('question', undefined));
+  assert(isValidStatus('note', ''));
+  assert(isValidStatus('construct', null));
+  assert(!isValidStatus('note', 'done'));
+  assert(!isValidStatus('construct', 'draft'));
+});
+
+test('isNodeType / statusesFor', () => {
+  assert(isNodeType('material'));
+  assert(!isNodeType('experiment'), 'old-map names are not types');
+  assertDeepEqual(statusesFor('task'), ['todo', 'doing', 'done']);
+  assertEqual(statusesFor('experiment'), null);
+});
+
+// ---- schema: relations ---------------------------------------------------
+
+describe('Schema — relations');
+
+test('exactly the fourteen relations of SCHEMA.md section 3', () => {
+  assertDeepEqual([...RELATION_NAMES].sort(), [
+    'addresses', 'answers', 'asks', 'blocks', 'bounds', 'contradicts', 'grounds',
+    'inspires', 'motivates', 'qualifies', 'supports', 'threatens', 'uses', 'yields',
+  ]);
+});
+
+test('from → to constraints hold for every listed pair', () => {
+  assert(relationAllows('asks', 'question', 'question'));
+  assert(relationAllows('motivates', 'gap', 'question'));
+  assert(relationAllows('addresses', 'study', 'question'));
+  assert(relationAllows('uses', 'method', 'study'));
+  assert(relationAllows('uses', 'material', 'study'));
+  assert(relationAllows('yields', 'finding', 'study'));
+  assert(relationAllows('supports', 'finding', 'claim'));
+  assert(relationAllows('supports', 'finding', 'finding'));
+  assert(relationAllows('contradicts', 'finding', 'claim'));
+  assert(relationAllows('contradicts', 'source', 'claim'));
+  assert(relationAllows('bounds', 'finding', 'finding'));
+  assert(relationAllows('bounds', 'finding', 'question'));
+  assert(relationAllows('answers', 'claim', 'question'));
+  assert(relationAllows('grounds', 'source', 'construct'));
+  assert(relationAllows('grounds', 'source', 'gap'));
+  assert(relationAllows('grounds', 'source', 'claim'));
+  assert(relationAllows('threatens', 'source', 'claim'));
+  assert(relationAllows('threatens', 'source', 'gap'));
+  assert(relationAllows('inspires', 'source', 'method'));
+  assert(relationAllows('inspires', 'source', 'study'));
+});
+
+test('qualifies and blocks go from note/task to anything', () => {
+  for (const type of NODE_TYPES) {
+    assert(relationAllows('qualifies', 'note', type), `note qualifies ${type}`);
+    assert(relationAllows('blocks', 'task', type), `task blocks ${type}`);
+  }
+  assert(!relationAllows('qualifies', 'task', 'note'), 'only notes qualify');
+  assert(!relationAllows('blocks', 'note', 'task'), 'only tasks block');
+});
+
+test('constraints reject direction flips and off-schema pairs', () => {
+  assert(!relationAllows('supports', 'claim', 'finding'), 'supports does not run claim → finding');
+  assert(!relationAllows('supports', 'source', 'claim'), 'sources ground or contradict, never support');
+  assert(!relationAllows('yields', 'study', 'finding'), 'yields runs finding → study, not the reverse');
+  assert(!relationAllows('uses', 'study', 'method'), 'uses runs method → study, not the reverse');
+  assert(!relationAllows('addresses', 'question', 'study'));
+  assert(!relationAllows('motivates', 'question', 'gap'));
+  assert(!relationAllows('bounds', 'finding', 'claim'), 'bounds never reaches a claim');
+  assert(!relationAllows('made-up', 'finding', 'claim'), 'unknown relation');
+});
+
+test('validRelations lists exactly the legal edges between two types', () => {
+  assertDeepEqual(validRelations('finding', 'claim'), ['supports', 'contradicts']);
+  assertDeepEqual(validRelations('source', 'gap'), ['grounds', 'threatens']);
+  assertDeepEqual(validRelations('source', 'claim'), ['contradicts', 'grounds', 'threatens']);
+  assertDeepEqual(validRelations('finding', 'question'), ['bounds']);
+  assertDeepEqual(validRelations('note', 'material'), ['qualifies']);
+  assertDeepEqual(validRelations('claim', 'finding'), [], 'nothing runs claim → finding');
+  assertDeepEqual(validRelations('material', 'question'), [], 'nothing runs material → question');
+});
+
+// ---- schema: validation --------------------------------------------------
+
+describe('Schema — node validation');
+
+test('a well-formed node has no errors', () => {
+  assertDeepEqual(validateNode(n('q1', 'question', 'open')), []);
+  assertDeepEqual(validateNode(n('c1', 'construct')), []);
+  assertDeepEqual(validateNode({
+    id: 'src1', type: 'source', label: 'Kenny 1994', status: 'read',
+    fields: { Citation: 'Guilford Press', Type: 'book' },
+    meta: { doi: '10.1000/x', zoteroKey: 'ABC123' },
+  }), []);
+});
+
+test('unknown extra properties are allowed (layout data must survive)', () => {
+  assertDeepEqual(validateNode(n('q1', 'question', 'open', { x: 10, y: 20, pinned: true })), []);
+});
+
+test('missing id, type or label are each caught', () => {
+  assert(validateNode({ type: 'question', label: 'x' }).some((m) => m.includes('"id"')));
+  assert(validateNode({ id: 'a', label: 'x' }).some((m) => m.includes('unknown type')));
+  assert(validateNode({ id: 'a', type: 'rq', label: 'x' }).some((m) => m.includes('unknown type')));
+  assert(validateNode({ id: 'a', type: 'question' }).some((m) => m.includes('"label"')));
+  assert(validateNode('not a node').length === 1);
+});
+
+test('status must belong to the node type', () => {
+  assert(validateNode(n('f1', 'finding', 'to-read')).some((m) => m.includes('not a finding status')));
+  assert(validateNode(n('n1', 'note', 'done')).some((m) => m.includes('takes no status')));
+  assert(validateNode(n('c1', 'construct', 'open')).some((m) => m.includes('takes no status')));
+  assertDeepEqual(validateNode(n('t1', 'task', 'doing')), []);
+});
+
+test('fields values must be strings; fields and meta must be objects', () => {
+  assert(validateNode(n('s1', 'source', 'read', { fields: 'DOI' })).length === 1);
+  assert(validateNode(n('s1', 'source', 'read', { fields: { Citation: 42 } })).some((m) => m.includes('fields.Citation')));
+  assert(validateNode(n('s1', 'source', 'read', { meta: [] })).some((m) => m.includes('"meta"')));
+});
+
+describe('Schema — edge and graph validation');
+
+const twoNodes = new Map([
+  ['f1', n('f1', 'finding', 'supported')],
+  ['c1', n('c1', 'claim', 'provisional')],
+  ['s1', n('s1', 'study', 'complete')],
+]);
+
+test('a well-formed edge has no errors', () => {
+  assertDeepEqual(validateEdge(e('f1', 'supports', 'c1'), twoNodes), []);
+  assertDeepEqual(validateEdge(e('f1', 'yields', 's1'), twoNodes), []);
+});
+
+test('unknown relations, missing endpoints and self-loops are caught', () => {
+  assert(validateEdge(e('f1', 'proves', 'c1'), twoNodes).some((m) => m.includes('unknown relation')));
+  assert(validateEdge(e('f1', 'supports', 'ghost'), twoNodes).some((m) => m.includes('missing node "ghost"')));
+  assert(validateEdge(e('ghost', 'supports', 'c1'), twoNodes).some((m) => m.includes('missing node "ghost"')));
+  assert(validateEdge(e('f1', 'supports', 'f1'), twoNodes).some((m) => m.includes('itself')));
+});
+
+test('type-pair violations name the allowed shapes', () => {
+  const errors = validateEdge(e('c1', 'supports', 'f1'), twoNodes);
+  assertEqual(errors.length, 1);
+  assert(errors[0].includes('does not go claim → finding'));
+  assert(errors[0].includes('finding → claim'), 'error teaches the allowed direction');
+});
+
+test('empty graph is valid; emptyGraph() produces one', () => {
+  assertDeepEqual(validateGraph(emptyGraph()), []);
+  assertEqual(emptyGraph().version, SCHEMA_VERSION);
+});
+
+test('a small coherent graph is valid', () => {
+  assertDeepEqual(validateGraph(g(
+    [n('g1', 'gap', 'asserted'), n('q1', 'question', 'open'), n('s1', 'study', 'running')],
+    [e('g1', 'motivates', 'q1'), e('s1', 'addresses', 'q1')],
+  )), []);
+});
+
+test('graph-level problems: shape, version, duplicate ids, duplicate edges', () => {
+  assert(validateGraph(null).length === 1);
+  assert(validateGraph({ version: 2, nodes: [], edges: [] }).some((m) => m.includes('version')));
+  assert(validateGraph({ nodes: {}, edges: [] }).some((m) => m.includes('"nodes"')));
+  assert(validateGraph({ nodes: [], edges: null }).some((m) => m.includes('"edges"')));
+  assert(validateGraph(g([n('a', 'note'), n('a', 'note')])).some((m) => m.includes('duplicate node id "a"')));
+  const dup = g(
+    [n('f1', 'finding'), n('c1', 'claim')],
+    [e('f1', 'supports', 'c1'), e('f1', 'supports', 'c1')],
+  );
+  assert(validateGraph(dup).some((m) => m.includes('duplicate edge')));
+});
+
+test('edgeKey identifies an edge by its (from, relation, to) triple', () => {
+  assertEqual(edgeKey(e('a', 'supports', 'b')), edgeKey({ from: 'a', relation: 'supports', to: 'b' }));
+  assert(edgeKey(e('a', 'supports', 'b')) !== edgeKey(e('a', 'bounds', 'b')));
+});
+
+// ---- lint ----------------------------------------------------------------
+
+describe('Lint — rule metadata');
+
+test('exactly eight rules, numbered 1–8', () => {
+  assertDeepEqual(LINT_RULES.map((r) => r.rule), [1, 2, 3, 4, 5, 6, 7, 8]);
+  assertDeepEqual(LINT_RULES.map((r) => r.id), [
+    'unsupported-claim', 'orphan-finding', 'unaddressed-question', 'unwarranted-question',
+    'bare-study', 'unverified-citation', 'unhandled-threat', 'status-mismatch',
+  ]);
+});
+
+test('an empty graph lints clean', () => {
+  assertDeepEqual(lint(emptyGraph()), []);
+});
+
+describe('Lint rule 1 — unsupported claim');
+
+test('a claim with no incoming supports is flagged', () => {
+  assertDeepEqual(flagged(g([n('c1', 'claim', 'provisional')]), 'unsupported-claim'), ['c1']);
+});
+
+test('one supporting finding clears it', () => {
+  const graph = g(
+    [n('c1', 'claim', 'provisional'), n('f1', 'finding', 'supported'), n('q1', 'question', 'open')],
+    [e('f1', 'supports', 'c1')],
+  );
+  assertDeepEqual(flagged(graph, 'unsupported-claim'), []);
+});
+
+test('a contradicting finding is not support', () => {
+  const graph = g(
+    [n('c1', 'claim', 'contested'), n('f1', 'finding', 'supported')],
+    [e('f1', 'contradicts', 'c1')],
+  );
+  assertDeepEqual(flagged(graph, 'unsupported-claim'), ['c1']);
+});
+
+describe('Lint rule 2 — orphan finding');
+
+test('a finding linked to nothing is flagged', () => {
+  assertDeepEqual(flagged(g([n('f1', 'finding', 'supported')]), 'orphan-finding'), ['f1']);
+});
+
+test('a finding that only yields to its study is still an orphan', () => {
+  const graph = g(
+    [n('f1', 'finding', 'supported'), n('s1', 'study', 'complete')],
+    [e('f1', 'yields', 's1')],
+  );
+  assertDeepEqual(flagged(graph, 'orphan-finding'), ['f1']);
+});
+
+test('direct supports → claim, or bounds → question, clears it', () => {
+  const graph = g(
+    [n('f1', 'finding', 'supported'), n('c1', 'claim', 'provisional'),
+     n('f2', 'finding', 'null-with-bound'), n('q1', 'question', 'bounded')],
+    [e('f1', 'supports', 'c1'), e('f2', 'bounds', 'q1')],
+  );
+  assertDeepEqual(flagged(graph, 'orphan-finding'), []);
+});
+
+test('chains count: a finding whose chain reaches a claim is not an orphan', () => {
+  const graph = g(
+    [n('f1', 'finding', 'supported'), n('f2', 'finding', 'supported'), n('c1', 'claim', 'provisional')],
+    [e('f1', 'supports', 'f2'), e('f2', 'supports', 'c1')],
+  );
+  assertDeepEqual(flagged(graph, 'orphan-finding'), []);
+});
+
+test('a chain that never reaches a claim or question flags every link, cycles included', () => {
+  const graph = g(
+    [n('f1', 'finding', 'supported'), n('f2', 'finding', 'supported')],
+    [e('f1', 'supports', 'f2'), e('f2', 'bounds', 'f1')],
+  );
+  assertDeepEqual(flagged(graph, 'orphan-finding'), ['f1', 'f2']);
+});
+
+describe('Lint rule 3 — unaddressed question');
+
+test('a question nothing touches is flagged', () => {
+  assertDeepEqual(flagged(g([n('q1', 'question', 'open')]), 'unaddressed-question'), ['q1']);
+});
+
+test('an addressing study or an answering claim clears it', () => {
+  const addressed = g(
+    [n('q1', 'question', 'open'), n('s1', 'study', 'planned')],
+    [e('s1', 'addresses', 'q1')],
+  );
+  assertDeepEqual(flagged(addressed, 'unaddressed-question'), []);
+  const answered = g(
+    [n('q1', 'question', 'answered'), n('c1', 'claim', 'established')],
+    [e('c1', 'answers', 'q1')],
+  );
+  assertDeepEqual(flagged(answered, 'unaddressed-question'), []);
+});
+
+test('a sub-question link (asks) does not by itself address anything', () => {
+  const graph = g(
+    [n('q1', 'question', 'open'), n('q2', 'question', 'open'), n('s1', 'study', 'running')],
+    [e('q2', 'asks', 'q1'), e('s1', 'addresses', 'q1')],
+  );
+  assertDeepEqual(flagged(graph, 'unaddressed-question'), ['q2']);
+});
+
+describe('Lint rule 4 — unwarranted question');
+
+test('a question with no motivating gap is flagged', () => {
+  assertDeepEqual(flagged(g([n('q1', 'question', 'open')]), 'unwarranted-question'), ['q1']);
+});
+
+test('a motivating gap clears it', () => {
+  const graph = g(
+    [n('q1', 'question', 'open'), n('g1', 'gap', 'verified')],
+    [e('g1', 'motivates', 'q1')],
+  );
+  assertDeepEqual(flagged(graph, 'unwarranted-question'), []);
+});
+
+test('motivation is direct: a sub-question does not inherit its parent’s gap', () => {
+  const graph = g(
+    [n('q1', 'question', 'open'), n('q2', 'question', 'open'), n('g1', 'gap', 'asserted')],
+    [e('g1', 'motivates', 'q1'), e('q2', 'asks', 'q1')],
+  );
+  assertDeepEqual(flagged(graph, 'unwarranted-question'), ['q2']);
+});
+
+describe('Lint rule 5 — bare study');
+
+test('a complete study with no finding is flagged', () => {
+  assertDeepEqual(flagged(g([n('s1', 'study', 'complete')]), 'bare-study'), ['s1']);
+});
+
+test('planned, running, abandoned or status-less studies are fine bare', () => {
+  const graph = g([
+    n('s1', 'study', 'planned'), n('s2', 'study', 'running'),
+    n('s3', 'study', 'abandoned'), n('s4', 'study'),
+  ]);
+  assertDeepEqual(flagged(graph, 'bare-study'), []);
+});
+
+test('a yielded finding clears a complete study', () => {
+  const graph = g(
+    [n('s1', 'study', 'complete'), n('f1', 'finding', 'supported')],
+    [e('f1', 'yields', 's1')],
+  );
+  assertDeepEqual(flagged(graph, 'bare-study'), []);
+});
+
+describe('Lint rule 6 — unverified citation');
+
+test('an unverified or to-read source grounding a claim is flagged', () => {
+  const unverified = g(
+    [n('src1', 'source', 'unverified'), n('c1', 'claim', 'provisional')],
+    [e('src1', 'grounds', 'c1')],
+  );
+  assertDeepEqual(flagged(unverified, 'unverified-citation'), ['src1']);
+  const toRead = g(
+    [n('src1', 'source', 'to-read'), n('c1', 'claim', 'provisional')],
+    [e('src1', 'grounds', 'c1')],
+  );
+  assertDeepEqual(flagged(toRead, 'unverified-citation'), ['src1']);
+});
+
+test('read or verified sources are fine; grounding only a construct or gap is fine', () => {
+  const graph = g(
+    [n('src1', 'source', 'verified'), n('src2', 'source', 'read'), n('src3', 'source', 'unverified'),
+     n('c1', 'claim', 'provisional'), n('k1', 'construct'), n('g1', 'gap', 'asserted')],
+    [e('src1', 'grounds', 'c1'), e('src2', 'grounds', 'c1'),
+     e('src3', 'grounds', 'k1'), e('src3', 'grounds', 'g1')],
+  );
+  assertDeepEqual(flagged(graph, 'unverified-citation'), []);
+});
+
+describe('Lint rule 7 — unhandled threat');
+
+test('a threat against an established claim is flagged, anchored on the claim', () => {
+  const graph = g(
+    [n('src1', 'source', 'read'), n('c1', 'claim', 'established'), n('f1', 'finding', 'supported')],
+    [e('src1', 'threatens', 'c1'), e('f1', 'supports', 'c1')],
+  );
+  const findings = lint(graph).filter((f) => f.id === 'unhandled-threat');
+  assertEqual(findings.length, 1);
+  assertEqual(findings[0].nodeId, 'c1');
+  assertDeepEqual(findings[0].related, ['src1']);
+});
+
+test('threats against provisional/contested claims or gaps are not flagged', () => {
+  const graph = g(
+    [n('src1', 'source', 'read'), n('c1', 'claim', 'provisional'), n('g1', 'gap', 'asserted')],
+    [e('src1', 'threatens', 'c1'), e('src1', 'threatens', 'g1')],
+  );
+  assertDeepEqual(flagged(graph, 'unhandled-threat'), []);
+});
+
+describe('Lint rule 8 — status mismatch');
+
+// Shared shape: gap → question ← claim ← finding(s), question marked answered.
+function answeredQuestion(...findingStatuses) {
+  const nodes = [
+    n('q1', 'question', 'answered'), n('c1', 'claim', 'established'),
+    ...findingStatuses.map((s, i) => n(`f${i + 1}`, 'finding', s)),
+  ];
+  const edges = [
+    e('c1', 'answers', 'q1'),
+    ...findingStatuses.map((s, i) => e(`f${i + 1}`, 'supports', 'c1')),
+  ];
+  return g(nodes, edges);
+}
+
+test('answered question whose only supporting findings are sealed/withdrawn/untestable is flagged', () => {
+  assertDeepEqual(flagged(answeredQuestion('sealed'), 'status-mismatch'), ['q1']);
+  assertDeepEqual(flagged(answeredQuestion('untestable', 'sealed', 'withdrawn'), 'status-mismatch'), ['q1']);
+});
+
+test('one genuinely supporting finding clears it', () => {
+  assertDeepEqual(flagged(answeredQuestion('sealed', 'supported'), 'status-mismatch'), []);
+  assertDeepEqual(flagged(answeredQuestion('null-with-bound'), 'status-mismatch'), []);
+});
+
+test('the rule lists exactly untestable/sealed/withdrawn — an invalid finding does not trigger it', () => {
+  assertDeepEqual(flagged(answeredQuestion('invalid'), 'status-mismatch'), []);
+});
+
+test('no supporting findings at all is rule 1’s problem, not rule 8’s', () => {
+  const graph = answeredQuestion();
+  assertDeepEqual(flagged(graph, 'status-mismatch'), []);
+  assertDeepEqual(flagged(graph, 'unsupported-claim'), ['c1']);
+});
+
+test('a question not marked answered is never flagged by rule 8', () => {
+  const graph = answeredQuestion('sealed');
+  graph.nodes[0].status = 'partly-answered';
+  assertDeepEqual(flagged(graph, 'status-mismatch'), []);
+});
+
+test('supporters are collected across all answering claims', () => {
+  const graph = g(
+    [n('q1', 'question', 'answered'),
+     n('c1', 'claim', 'established'), n('c2', 'claim', 'provisional'),
+     n('f1', 'finding', 'sealed'), n('f2', 'finding', 'supported')],
+    [e('c1', 'answers', 'q1'), e('c2', 'answers', 'q1'),
+     e('f1', 'supports', 'c1'), e('f2', 'supports', 'c2')],
+  );
+  assertDeepEqual(flagged(graph, 'status-mismatch'), [], 'f2 under the second claim rescues it');
+});
+
+describe('Lint — output shape');
+
+test('findings carry rule number, rule id, anchor node and message; sorted by rule', () => {
+  const graph = g(
+    [n('q1', 'question', 'open'), n('c1', 'claim', 'provisional')],
+    [],
+  );
+  const findings = lint(graph);
+  assertDeepEqual(findings.map((f) => f.rule), [1, 3, 4], 'sorted by rule number');
+  for (const f of findings) {
+    assert(typeof f.id === 'string' && typeof f.nodeId === 'string');
+    assert(Array.isArray(f.related));
+    assert(typeof f.message === 'string' && f.message.length > 0);
+  }
+});
+
+test('lint tolerates edges whose endpoints are missing', () => {
+  const graph = g([n('c1', 'claim', 'provisional')], [e('ghost', 'supports', 'c1')]);
+  assertDeepEqual(flagged(graph, 'unsupported-claim'), ['c1']);
+});
+
+// ---- render --------------------------------------------------------------
+
+const container = document.getElementById('results');
+let currentSection = null;
+let list = null;
+for (const r of results) {
+  if (r.section !== currentSection) {
+    currentSection = r.section;
+    const h = document.createElement('h2');
+    h.textContent = r.section;
+    container.append(h);
+    list = document.createElement('ul');
+    container.append(list);
+  }
+  const li = document.createElement('li');
+  li.className = r.ok ? 'pass' : 'fail';
+  li.textContent = r.name;
+  if (!r.ok) {
+    const pre = document.createElement('pre');
+    pre.textContent = String(r.error?.stack ?? r.error);
+    li.append(pre);
+  }
+  list.append(li);
+}
+const failed = results.filter((r) => !r.ok).length;
+const summary = document.getElementById('summary');
+summary.textContent = failed === 0
+  ? `All ${results.length} tests pass`
+  : `${failed} of ${results.length} tests FAILED`;
+summary.className = failed === 0 ? 'pass' : 'fail';
+document.title = `${failed === 0 ? '✓' : '✗'} Research graph — tests`;
+</script>
+</body>
+</html>
