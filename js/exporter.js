@@ -5,6 +5,7 @@
 // properties the spec tolerates; foreign canvases import best-effort.
 
 import { validateGraph, relationAllows, edgeKey } from './schema.js';
+import { looksLikeOldMap, migrateOldMap } from './migrate.js';
 
 export function download(filename, text, mime = 'application/json') {
   const url = URL.createObjectURL(new Blob([text], { type: mime }));
@@ -163,6 +164,28 @@ export function importText(text) {
   } catch (error) {
     return { ok: false, message: `Not valid JSON: ${error.message}` };
   }
+  if (looksLikeOldMap(json)) {
+    const { graph, report } = migrateOldMap(json);
+    const errors = validateGraph(graph);
+    if (errors.length > 0) {
+      return {
+        ok: false,
+        message: `Migrated the old map, but the result is invalid:\n${errors.slice(0, 5).join('\n')}`,
+      };
+    }
+    const parts = [`${graph.nodes.length} nodes`, `${graph.edges.length} edges kept`];
+    if (report.droppedEdges.length > 0) {
+      parts.push(`${report.droppedEdges.length} edges dropped (no schema equivalent)`);
+    }
+    if (report.approximated.length > 0) parts.push(`${report.approximated.length} approximated as bounds`);
+    if (report.droppedStatuses.length > 0) parts.push(`${report.droppedStatuses.length} statuses dropped`);
+    return {
+      ok: true,
+      graph,
+      report,
+      message: `Migrated the old map per SCHEMA.md §7: ${parts.join(', ')}.`,
+    };
+  }
   if (looksLikeCanvas(json)) {
     const { graph, report } = fromCanvas(json);
     const errors = validateGraph(graph);
@@ -202,7 +225,7 @@ export function importText(text) {
 // import map resolves dependencies by name.
 const MODULE_NAMES = [
   'schema', 'lint', 'layout', 'store', 'view', 'render', 'forms', 'sources',
-  'exporter', 'app',
+  'migrate', 'exporter', 'app',
 ];
 
 async function fetchText(path) {

@@ -39,6 +39,7 @@ import { toCanvas, fromCanvas, looksLikeCanvas, extractGraphFromHtml, importText
 import {
   extractZoteroKey, cslToSource, parseBibtex, parseSourcesText, planSourceImport, applySourcePatch,
 } from './js/sources.js';
+import { looksLikeOldMap, migrateOldMap } from './js/migrate.js';
 
 // ---- harness -------------------------------------------------------------
 
@@ -666,6 +667,121 @@ test('looksLikeCanvas tells the two formats apart', () => {
   assert(!looksLikeCanvas(canvasGraph), 'a graph is not a canvas');
   assert(!looksLikeCanvas({ nodes: [] }));
   assert(!looksLikeCanvas(null));
+});
+
+// ---- old-map migration (SCHEMA.md §7) -------------------------------------
+
+describe('Old-map migration');
+
+const oldMap = {
+  meta: { title: 'Old thesis map', owner: 'Alp', version: '0.5' },
+  nodes: [
+    { id: 'rq0', type: 'rq', root: true, label: 'Root question', detail: 'Long prose.' },
+    { id: 'rq1', type: 'rq', status: 'split', label: 'Sub question' },
+    { id: 'ex1', type: 'experiment', status: 'sealed', label: 'Sealed experiment' },
+    { id: 'm1', type: 'method', label: 'The method' },
+    { id: 'r1', type: 'result', status: 'established', label: 'The result', fields: { p: '.01' } },
+    { id: 'cl1', type: 'claim', status: 'established', label: 'The claim' },
+    { id: 'p1', type: 'paper', status: 'todo', label: 'A paper' },
+    { id: 'cor1', type: 'corpus', status: 'established', label: 'The corpus' },
+    { id: 'v1', type: 'venue', status: 'todo', label: 'Target venue' },
+    { id: 'con1', type: 'construct', status: 'provisional', label: 'A construct' },
+    { id: 'g1', type: 'gap', label: 'The gap' },
+  ],
+  edges: [
+    { from: 'rq1', to: 'rq0', rel: 'sub-question' },
+    { from: 'g1', to: 'rq0', rel: 'motivates' },
+    { from: 'ex1', to: 'rq1', rel: 'tests' },
+    { from: 'm1', to: 'ex1', rel: 'method' },
+    { from: 'cor1', to: 'ex1', rel: 'corpus' },
+    { from: 'r1', to: 'm1', rel: 'yields' },
+    { from: 'r1', to: 'cl1', rel: 'evidence' },
+    { from: 'cl1', to: 'rq1', rel: 'answers' },
+    { from: 'cl1', to: 'r1', rel: 'generalises' },
+    { from: 'p1', to: 'cl1', rel: 'objection to pre-empt' },
+    { from: 'p1', to: 'con1', rel: 'source' },
+    { from: 'con1', to: 'rq0', rel: 'variance source' },
+    { from: 'v1', to: 'rq0', rel: 'venue target' },
+    { from: 'r1', to: 'ex1', rel: 'headline finding' },
+  ],
+};
+
+test('looksLikeOldMap recognises old maps and nothing else', () => {
+  assert(looksLikeOldMap(oldMap));
+  assert(looksLikeOldMap({ nodes: [{ id: 'a', type: 'note', label: 'x' }], edges: [{ from: 'a', to: 'b', rel: 'free text' }] }));
+  assert(!looksLikeOldMap(g([n('q1', 'question', 'open')])), 'a v1 graph is not an old map');
+  assert(!looksLikeOldMap({
+    nodes: [{ id: 'a', type: 'text', text: 'x', x: 0, y: 0, width: 10, height: 10 }],
+    edges: [{ id: 'e', fromNode: 'a', toNode: 'a' }],
+  }), 'a canvas is not an old map');
+});
+
+test('types and statuses migrate per §7; the migrated graph validates', () => {
+  const { graph } = migrateOldMap(oldMap);
+  assertDeepEqual(validateGraph(graph), []);
+  const type = (id) => graph.nodes.find((x) => x.id === id).type;
+  const status = (id) => graph.nodes.find((x) => x.id === id).status;
+  assertEqual(type('rq0'), 'question');
+  assertEqual(type('ex1'), 'study');
+  assertEqual(type('r1'), 'finding');
+  assertEqual(type('p1'), 'source');
+  assertEqual(type('cor1'), 'material');
+  assertEqual(type('v1'), 'task', 'venue becomes a task');
+  assertEqual(status('rq1'), 'partly-answered', 'split maps to partly-answered');
+  assertEqual(status('ex1'), 'running', 'a sealed experiment is not finished');
+  assertEqual(status('r1'), 'supported', 'established on a finding becomes supported');
+  assertEqual(status('cl1'), 'established', 'established on a claim stays');
+  assertEqual(status('p1'), 'to-read');
+  assertEqual(status('cor1'), 'frozen');
+  assertEqual(status('con1'), undefined, 'constructs are statusless — status dropped');
+});
+
+test('detail moves into fields.Detail; extras like root survive', () => {
+  const { graph } = migrateOldMap(oldMap);
+  const rq0 = graph.nodes.find((x) => x.id === 'rq0');
+  assertEqual(rq0.fields.Detail, 'Long prose.');
+  assertEqual(rq0.root, true);
+  const r1 = graph.nodes.find((x) => x.id === 'r1');
+  assertEqual(r1.fields.p, '.01', 'old fields are kept');
+});
+
+test('edges map by type pair: asks, addresses, uses, supports, answers, blocks', () => {
+  const { graph } = migrateOldMap(oldMap);
+  const has = (from, relation, to) => graph.edges.some(
+    (e) => e.from === from && e.relation === relation && e.to === to,
+  );
+  assert(has('rq1', 'asks', 'rq0'), 'sub-question direction preserved');
+  assert(has('g1', 'motivates', 'rq0'));
+  assert(has('ex1', 'addresses', 'rq1'));
+  assert(has('m1', 'uses', 'ex1'));
+  assert(has('cor1', 'uses', 'ex1'));
+  assert(has('r1', 'supports', 'cl1'));
+  assert(has('cl1', 'answers', 'rq1'));
+  assert(has('p1', 'threatens', 'cl1'), '"objection to pre-empt" reads as a threat');
+  assert(has('p1', 'grounds', 'con1'));
+  assert(has('v1', 'blocks', 'rq0'), 'the venue-task blocks the question');
+});
+
+test('finding→method edges are routed to the method’s study; flips and drops are reported', () => {
+  const { graph, report } = migrateOldMap(oldMap);
+  const has = (from, relation, to) => graph.edges.some(
+    (e) => e.from === from && e.relation === relation && e.to === to,
+  );
+  assert(has('r1', 'yields', 'ex1'), 'r1 —yields→ m1 became r1 —yields→ ex1');
+  assert(has('r1', 'supports', 'cl1'), 'cl1 —generalises→ r1 flipped into finding-supports-claim');
+  assert(report.droppedEdges.some((d) => d.includes('con1')),
+    'the construct → question edge is dropped and reported');
+  assertEqual(graph.edges.filter((e) => e.from === 'r1' && e.to === 'ex1').length, 1,
+    'yields deduplicated against the headline-finding edge');
+});
+
+test('importText migrates an old map end to end', () => {
+  const result = importText(JSON.stringify(oldMap));
+  assert(result.ok, result.message);
+  assert(result.message.includes('Migrated the old map'));
+  assertDeepEqual(validateGraph(result.graph), []);
+  assertEqual(result.graph.meta.title, 'Old thesis map');
+  assert(result.graph.meta.id, 'a graph id is generated');
 });
 
 // ---- importing an exported HTML file --------------------------------------
