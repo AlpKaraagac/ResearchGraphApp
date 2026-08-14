@@ -126,7 +126,37 @@ export function fromCanvas(canvas) {
 
 // ---- import ----------------------------------------------------------------
 
+// A self-contained HTML export carries its graph in a JSON script tag; pull it
+// back out so the file itself round-trips. Any <script type="application/json">
+// whose content has a nodes array counts, so hand-built files work too.
+export function extractGraphFromHtml(html) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const candidates = [
+    doc.getElementById('embedded-graph'),
+    ...doc.querySelectorAll('script[type="application/json"]'),
+  ].filter(Boolean);
+  for (const el of candidates) {
+    try {
+      const json = JSON.parse(el.textContent);
+      if (json && Array.isArray(json.nodes)) return el.textContent;
+    } catch { /* not this one — try the next candidate */ }
+  }
+  return null;
+}
+
 export function importText(text) {
+  if (text.trim().startsWith('<')) {
+    const embedded = extractGraphFromHtml(text);
+    if (!embedded) {
+      return {
+        ok: false,
+        message: 'That HTML has no embedded graph. Expected a self-contained export from this app.',
+      };
+    }
+    const result = importText(embedded);
+    if (result.ok) result.message += ' (extracted from the HTML file)';
+    return result;
+  }
   let json;
   try {
     json = JSON.parse(text);

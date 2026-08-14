@@ -35,7 +35,7 @@ import {
 } from './js/schema.js';
 import { LINT_RULES, lint } from './js/lint.js';
 import { ID_PREFIXES, slugify, uniqueNodeId, directedRelationOptions } from './js/forms.js';
-import { toCanvas, fromCanvas, looksLikeCanvas } from './js/exporter.js';
+import { toCanvas, fromCanvas, looksLikeCanvas, extractGraphFromHtml, importText } from './js/exporter.js';
 import {
   extractZoteroKey, cslToSource, parseBibtex, parseSourcesText, planSourceImport, applySourcePatch,
 } from './js/sources.js';
@@ -666,6 +666,43 @@ test('looksLikeCanvas tells the two formats apart', () => {
   assert(!looksLikeCanvas(canvasGraph), 'a graph is not a canvas');
   assert(!looksLikeCanvas({ nodes: [] }));
   assert(!looksLikeCanvas(null));
+});
+
+// ---- importing an exported HTML file --------------------------------------
+
+describe('HTML import');
+
+const embeddedGraph = {
+  version: 1,
+  meta: { id: 'demo' },
+  nodes: [{ id: 'n1', type: 'note', label: 'A note', x: 1, y: 2 }],
+  edges: [],
+};
+const exportedHtml = [
+  '<!DOCTYPE html><html><head><title>x</title></head><body>',
+  '<script type="application/json" id="other">{"unrelated": true}\u003c/script>',
+  `<script type="application/json" id="embedded-graph">${JSON.stringify(embeddedGraph).replace(/</g, '\\u003c')}\u003c/script>`,
+  '</body></html>',
+].join('\n');
+
+test('extractGraphFromHtml finds the embedded graph and skips unrelated JSON scripts', () => {
+  const text = extractGraphFromHtml(exportedHtml);
+  assert(text !== null, 'graph found');
+  assertDeepEqual(JSON.parse(text), embeddedGraph);
+  assertEqual(extractGraphFromHtml('<!DOCTYPE html><html><body>plain page</body></html>'), null);
+});
+
+test('importText accepts a self-contained HTML export directly', () => {
+  const result = importText(exportedHtml);
+  assert(result.ok, result.message);
+  assertDeepEqual(result.graph, embeddedGraph);
+  assert(result.message.includes('extracted from the HTML file'));
+});
+
+test('HTML without an embedded graph is rejected with a clear message', () => {
+  const result = importText('<!DOCTYPE html><html><body>not an export</body></html>');
+  assert(!result.ok);
+  assert(result.message.includes('no embedded graph'));
 });
 
 // ---- sources: CSL-JSON and BibTeX ----------------------------------------

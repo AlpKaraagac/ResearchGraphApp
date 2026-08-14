@@ -35,7 +35,8 @@ whether it is stored.
   (`.canvas`, readable in Obsidian; round-trips losslessly), or as a
   **self-contained HTML file** with the whole viewer inlined — mail it to a
   colleague and they see exactly what you see, from a double-click, with nothing
-  installed. Import accepts JSON and `.canvas`.
+  installed. Import accepts JSON, `.canvas`, and a self-contained HTML export
+  itself — drop the file on the app and its graph becomes the current one.
 - **Sources** — paste or drop a CSL-JSON or BibTeX export and each item becomes a
   `source` node; re-importing updates rather than duplicates (matched on Zotero
   key, then DOI, then citation key). Optional one-way pull from the

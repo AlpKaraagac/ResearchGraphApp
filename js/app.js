@@ -484,11 +484,13 @@ window.addEventListener('drop', async (event) => {
   const text = file ? await file.text() : event.dataTransfer?.getData('text/plain');
   if (!text?.trim()) return;
 
-  let parsed = null;
-  try {
-    parsed = JSON.parse(text);
-  } catch { /* not JSON — fall through to the sources path */ }
-  if (parsed && Array.isArray(parsed.nodes)) {
+  let isGraphish = text.trim().startsWith('<'); // exported HTML with an embedded graph
+  if (!isGraphish) {
+    try {
+      isGraphish = Array.isArray(JSON.parse(text).nodes);
+    } catch { /* not JSON — fall through to the sources path */ }
+  }
+  if (isGraphish) {
     const result = importText(text);
     $('export-html').hidden = isEmbeddedCopy;
     ui.shareDialog.showModal();
