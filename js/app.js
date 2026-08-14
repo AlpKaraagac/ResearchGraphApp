@@ -601,12 +601,12 @@ $('fit').addEventListener('click', () => view.fit(renderer.bounds(state.position
 function startLayout() {
   const radii = new Map();
   for (const [id, size] of renderer.sizes) {
-    radii.set(id, Math.max(size.w, size.h) / 2 + 12);
+    radii.set(id, Math.max(size.w, size.h) / 2 + 24);
   }
   const layout = createLayout(
     state.graph.nodes.map((n) => n.id),
     state.graph.edges,
-    { radii },
+    { radii, sizes: renderer.sizes },
   );
   layout.settle();
   state.positions = layout.positions();

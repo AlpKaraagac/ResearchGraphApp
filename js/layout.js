@@ -5,12 +5,12 @@
 // always produces the same arrangement.
 
 const GOLDEN_ANGLE = 2.399963229728653;
-const SPIRAL_SPACING = 110;
-const REPULSION = 32000;
+const SPIRAL_SPACING = 130;
+const REPULSION = 52000;
 const SPRING = 0.03;
-const SPRING_REST = 210;
-const COLLIDE_PUSH = 0.25;
-const CENTER_PULL = 0.004;
+const SPRING_REST = 280; // > two card radii, so connected cards never overlap
+const COLLIDE_PUSH = 0.35;
+const CENTER_PULL = 0.0025;
 const DAMPING = 0.82;
 const ALPHA_DECAY = 0.98;
 const ALPHA_MIN = 0.02;
@@ -18,7 +18,10 @@ const MAX_SPEED = 30; // per-tick displacement cap: keeps collision spikes from 
 
 // ids: node ids in render order. edges: { from, to } (unknown ids skipped).
 // radii: optional Map(id → collision radius) from measured card sizes.
-export function createLayout(ids, edges, { radii } = {}) {
+// sizes: optional Map(id → {w, h}) enabling the exact de-overlap pass —
+// the forces spread the graph, but only rectangle separation can guarantee
+// that no two cards overlap once the simulation cools.
+export function createLayout(ids, edges, { radii, sizes } = {}) {
   const count = ids.length;
   const index = new Map(ids.map((id, i) => [id, i]));
   const px = new Float64Array(count);
@@ -26,6 +29,8 @@ export function createLayout(ids, edges, { radii } = {}) {
   const vx = new Float64Array(count);
   const vy = new Float64Array(count);
   const radius = new Float64Array(count);
+  const halfW = new Float64Array(count);
+  const halfH = new Float64Array(count);
 
   for (let i = 0; i < count; i++) {
     const angle = i * GOLDEN_ANGLE;
@@ -33,6 +38,9 @@ export function createLayout(ids, edges, { radii } = {}) {
     px[i] = Math.cos(angle) * r;
     py[i] = Math.sin(angle) * r;
     radius[i] = radii?.get(ids[i]) ?? 70;
+    const size = sizes?.get(ids[i]);
+    halfW[i] = (size?.w ?? radius[i] * 2) / 2;
+    halfH[i] = (size?.h ?? radius[i]) / 2;
   }
 
   const springs = [];
@@ -89,10 +97,43 @@ export function createLayout(ids, edges, { radii } = {}) {
     if (alpha < ALPHA_MIN) alpha = 0;
   }
 
+  // Exact de-overlap: repeatedly push the members of each overlapping card
+  // pair apart along the axis of least overlap, until no pair overlaps or the
+  // iteration cap is hit. Runs after the forces have settled, so it only nudges
+  // a locally-crowded arrangement rather than fighting the springs.
+  const OVERLAP_PAD = 14;
+  function resolveOverlaps() {
+    for (let iter = 0; iter < 300; iter++) {
+      let moved = false;
+      for (let i = 0; i < count; i++) {
+        for (let j = i + 1; j < count; j++) {
+          let dx = px[j] - px[i];
+          let dy = py[j] - py[i];
+          if (dx === 0 && dy === 0) { dx = (i - j) * 0.17; dy = 0.19; }
+          const overlapX = halfW[i] + halfW[j] + OVERLAP_PAD - Math.abs(dx);
+          const overlapY = halfH[i] + halfH[j] + OVERLAP_PAD - Math.abs(dy);
+          if (overlapX <= 0 || overlapY <= 0) continue;
+          moved = true;
+          if (overlapX < overlapY) {
+            const shift = (dx >= 0 ? 1 : -1) * (overlapX / 2 + 0.5);
+            px[i] -= shift;
+            px[j] += shift;
+          } else {
+            const shift = (dy >= 0 ? 1 : -1) * (overlapY / 2 + 0.5);
+            py[i] -= shift;
+            py[j] += shift;
+          }
+        }
+      }
+      if (!moved) break;
+    }
+  }
+
   return {
     settle() {
       let guard = 2000;
       while (alpha > 0 && guard-- > 0) tick();
+      resolveOverlaps();
     },
     positions() {
       const out = new Map();
