@@ -4,6 +4,7 @@
 // rebuild (which would re-run layout and destroy the user's mental map).
 
 import { edgeKey } from './schema.js';
+import { LINT_RULES } from './lint.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -201,6 +202,39 @@ export function createRenderer(ui, callbacks) {
     build, position, bounds, setState, sizes,
     addNode, updateNode, removeNode, addEdge, removeEdge,
   };
+}
+
+// ---- lint panel ------------------------------------------------------------
+
+export function renderLintPanel(ui, findings, callbacks) {
+  ui.lintList.replaceChildren();
+  if (findings.length === 0) {
+    const p = document.createElement('p');
+    p.className = 'lint-clean';
+    p.textContent = '✓ No findings — the graph is clean.';
+    ui.lintList.append(p);
+    return;
+  }
+  for (const rule of LINT_RULES) {
+    const matches = findings.filter((f) => f.rule === rule.rule);
+    if (matches.length === 0) continue;
+
+    const heading = document.createElement('h3');
+    heading.textContent = `${rule.title} · ${matches.length}`;
+    const desc = document.createElement('p');
+    desc.className = 'rule-desc';
+    desc.textContent = rule.description;
+    ui.lintList.append(heading, desc);
+
+    for (const finding of matches) {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'lint-row';
+      row.textContent = finding.message;
+      row.addEventListener('click', () => callbacks.onJump(finding.nodeId));
+      ui.lintList.append(row);
+    }
+  }
 }
 
 // ---- detail panel ----------------------------------------------------------
