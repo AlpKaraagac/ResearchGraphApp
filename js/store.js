@@ -43,6 +43,36 @@ export function saveSettings(patch) {
   } catch { /* settings are a convenience; losing them is harmless */ }
 }
 
+// Clearing a map is the one destructive action here, so the cleared copy is
+// kept under its own key — the undo survives a reload, not just a click.
+const BACKUP_PREFIX = 'rg.backup.';
+
+export function saveBackup(graph) {
+  try {
+    if (!graph?.meta?.id) return { ok: false };
+    localStorage.setItem(BACKUP_PREFIX + graph.meta.id, JSON.stringify(graph));
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error };
+  }
+}
+
+export function loadBackup(id) {
+  try {
+    if (!id) return null;
+    const raw = localStorage.getItem(BACKUP_PREFIX + id);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearBackup(id) {
+  try {
+    if (id) localStorage.removeItem(BACKUP_PREFIX + id);
+  } catch { /* nothing to do */ }
+}
+
 export function save(graph) {
   try {
     const id = graph.meta?.id;

@@ -70,6 +70,14 @@ button {
   padding: 8px 10px 4px;
 }
 
+/* On a phone the controls do not fit beside the title, so the spacer becomes
+   a full-width line break: title and save state on top, buttons below. */
+@media (max-width: 620px) {
+  .bar { flex-wrap: wrap; }
+  .bar .spacer { flex-basis: 100%; height: 0; }
+  #graph-title { max-width: 60vw; }
+}
+
 #graph-title {
   font-size: 14px;
   font-weight: 650;
@@ -101,6 +109,11 @@ button {
   font-size: 12.5px;
   cursor: pointer;
   white-space: nowrap;
+}
+
+.bar-btn.danger-btn {
+  color: #8f1d1d;
+  border-color: #e0b4b4;
 }
 
 #search {
@@ -331,7 +344,10 @@ button {
 /* the explicit display would otherwise override the hidden attribute,
    leaving an invisible full-canvas overlay that eats every click */
 #empty-state[hidden] { display: none; }
+/* the panel itself must not swallow canvas clicks, but its buttons must work */
 #empty-state { pointer-events: none; }
+#empty-state > div { pointer-events: auto; }
+#empty-state #undo-clear { margin: 0; }
 
 /* ---- add-node button --------------------------------------------------- */
 

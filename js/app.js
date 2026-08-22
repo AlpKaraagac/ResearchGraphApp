@@ -27,6 +27,9 @@ const ui = {
   edgeLabels: $('edge-labels'),
   emptyState: $('empty-state'),
   emptyMessage: $('empty-message'),
+  undoClear: $('undo-clear'),
+  clearDialog: $('clear-dialog'),
+  clearBody: $('clear-body'),
   detail: $('detail'),
   detailType: $('detail-type'),
   detailStatus: $('detail-status'),
@@ -144,9 +147,14 @@ function applyVisibility() {
 
 function refreshEmptyState() {
   if (state.graph && state.graph.nodes.length === 0) {
-    showEmpty('The graph is empty — tap ＋ to add the first question.');
+    const backup = store.loadBackup(state.graph.meta?.id);
+    showEmpty(backup
+      ? `Cleared — ${backup.nodes.length} node${backup.nodes.length === 1 ? '' : 's'} removed. Tap ＋ to start again.`
+      : 'The graph is empty — tap ＋ to add the first question.');
+    ui.undoClear.hidden = !backup;
   } else {
     ui.emptyState.hidden = true;
+    ui.undoClear.hidden = true;
   }
 }
 
@@ -285,6 +293,37 @@ $('detail-delete').addEventListener('click', () => {
   if (!node) return;
   const incident = state.graph.edges.filter((e) => e.from === node.id || e.to === node.id);
   forms.confirmDeleteNode(node, incident, childrenOf(state.graph, node.id), labelOf);
+});
+
+// ---- clear, and the undo that makes it safe --------------------------------
+
+$('clear-btn').addEventListener('click', () => {
+  const nodes = state.graph.nodes.length;
+  const edges = state.graph.edges.length;
+  if (nodes === 0 && edges === 0) return; // nothing to clear
+  ui.clearBody.textContent =
+    `Delete everything in "${state.graph.meta?.title ?? 'this map'}" — `
+    + `${nodes} node${nodes === 1 ? '' : 's'} and ${edges} link${edges === 1 ? '' : 's'}?`;
+  ui.clearDialog.showModal();
+});
+
+$('clear-ok').addEventListener('click', () => {
+  ui.clearDialog.close();
+  syncPositionsIntoGraph();
+  store.saveBackup(state.graph);
+  const { id, title } = state.graph.meta ?? {};
+  adoptGraph({ version: 2, meta: { id, title }, nodes: [], edges: [] });
+  persist();
+  deselect();
+});
+
+ui.undoClear.addEventListener('click', () => {
+  const backup = store.loadBackup(state.graph.meta?.id);
+  if (!backup) return;
+  adoptGraph(backup);
+  store.clearBackup(backup.meta?.id);
+  persist();
+  refreshEmptyState();
 });
 
 // ---- share: export and import ----------------------------------------------

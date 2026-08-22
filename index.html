@@ -14,6 +14,7 @@
     <span id="save-indicator" aria-live="polite"></span>
     <span class="spacer"></span>
     <button id="share-btn" type="button" class="bar-btn">Share</button>
+    <button id="clear-btn" type="button" class="bar-btn danger-btn">Clear</button>
     <div class="view-controls" role="group" aria-label="View controls">
       <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
       <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
@@ -41,7 +42,10 @@
     <div id="node-layer"></div>
   </div>
   <div id="empty-state" hidden>
-    <p id="empty-message"></p>
+    <div>
+      <p id="empty-message"></p>
+      <button id="undo-clear" type="button" class="ghost-btn" hidden>Undo — restore the cleared map</button>
+    </div>
   </div>
   <button id="add-node-btn" type="button" aria-label="Add node">＋</button>
   <aside id="detail" class="sheet" hidden aria-label="Node details">
@@ -166,6 +170,17 @@
   <div class="dialog-actions">
     <button type="button" data-close>Cancel</button>
     <button type="button" id="confirm-ok" class="primary danger">Delete</button>
+  </div>
+</dialog>
+
+<dialog id="clear-dialog">
+  <h2>Clear the map</h2>
+  <p id="clear-body"></p>
+  <p class="note-text">A copy is kept, so this can be undone — but if the map matters,
+  download it from Share first.</p>
+  <div class="dialog-actions">
+    <button type="button" data-close>Cancel</button>
+    <button type="button" id="clear-ok" class="primary danger">Clear everything</button>
   </div>
 </dialog>
 

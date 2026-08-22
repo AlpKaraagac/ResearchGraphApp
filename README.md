@@ -47,7 +47,9 @@ an id, a type and a label", so the tool never argues with you about how you work
   flow a full-screen form. **Spread** recomputes the layout; overlapping cards are
   separated automatically on load.
 - **Edit** — add, edit and delete nodes and links. Deleting a node warns about what it
-  takes with it. A raw-JSON tab covers bulk edits.
+  takes with it. A raw-JSON tab covers bulk edits. **Clear** empties the whole map after
+  a confirmation that names what will go — and keeps a copy, so the empty canvas offers
+  an Undo that survives a reload.
 - **Share** — export as graph JSON, as [JSON Canvas](https://jsoncanvas.org) (`.canvas`,
   readable in Obsidian), or as a **self-contained HTML file** with the whole viewer
   inlined — mail it to a colleague and they see exactly what you see, from a

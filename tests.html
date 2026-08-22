@@ -41,6 +41,7 @@ import {
   extractZoteroKey, cslToSource, parseBibtex, parseSourcesText, planSourceImport, applySourcePatch,
 } from './js/sources.js';
 import { separateRects } from './js/layout.js';
+import { saveBackup, loadBackup, clearBackup } from './js/store.js';
 
 // ---- harness -------------------------------------------------------------
 
@@ -358,6 +359,34 @@ test('re-import updates rather than duplicating, and never touches status', () =
   const node = graph.nodes[0];
   applySourcePatch(node, plan.updates[0].patch);
   assertEqual(node.status, 'verified', 'status survives a re-import');
+});
+
+// ---- the clear safety net --------------------------------------------------
+
+describe('Store — the backup behind Clear');
+
+test('a cleared map round-trips through the backup and is consumed by undo', () => {
+  const graph = {
+    version: 2,
+    meta: { id: 'test-backup-graph', title: 'Doomed' },
+    nodes: [n('q1', 'question'), n('ex1', 'experiment', { result: 'it worked' })],
+    edges: [e('ex1', 'addresses', 'q1')],
+  };
+  try {
+    assertEqual(loadBackup('test-backup-graph'), null, 'nothing there to begin with');
+    assert(saveBackup(graph).ok);
+    const restored = loadBackup('test-backup-graph');
+    assertDeepEqual(restored, graph, 'the whole graph comes back, results and all');
+    clearBackup('test-backup-graph');
+    assertEqual(loadBackup('test-backup-graph'), null, 'undo consumes the backup');
+  } finally {
+    clearBackup('test-backup-graph');
+  }
+});
+
+test('a graph with no id cannot be backed up, and missing ids read as null', () => {
+  assertEqual(saveBackup({ meta: {}, nodes: [], edges: [] }).ok, false);
+  assertEqual(loadBackup(undefined), null);
 });
 
 // ---- layout ----------------------------------------------------------------
