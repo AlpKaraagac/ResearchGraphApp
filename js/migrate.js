@@ -3,6 +3,7 @@
 // point of the exercise — results folded into the experiment that produced
 // them, so one node carries its nature, what was done, and what came out.
 
+import { SCHEMA_VERSION } from './schema.js';
 import { slugify } from './forms.js';
 
 // Old type name → new type. Everything not named here becomes a note, with
@@ -28,7 +29,15 @@ const relOf = (edge) => String(edge?.relation ?? edge?.rel ?? '').toLowerCase();
 
 export function looksLikeOldMap(json) {
   if (!json || !Array.isArray(json.nodes)) return false;
-  const legacyTypes = ['rq', 'experiment', 'result', 'paper', 'corpus', 'venue',
+  // A graph that declares the current version, or carries any field the
+  // current schema introduced, is not an old map. Without this an ordinary
+  // new graph containing experiments would be "migrated" — and the migration
+  // would strip the very fields it now carries.
+  if (json.version === SCHEMA_VERSION) return false;
+  const currentFields = ['nature', 'description', 'result', 'parent'];
+  if (json.nodes.some((n) => n && currentFields.some((k) => n[k] !== undefined))) return false;
+  // `experiment` is deliberately absent: it is a current type, not a legacy one.
+  const legacyTypes = ['rq', 'result', 'paper', 'corpus', 'venue',
     'study', 'finding', 'claim', 'gap', 'construct', 'method', 'material', 'task'];
   if (json.nodes.some((n) => n && legacyTypes.includes(n.type))) return true;
   return Array.isArray(json.edges) && json.edges.some((e) => e && e.rel !== undefined);

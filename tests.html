@@ -203,6 +203,29 @@ test('looksLikeOldMap spots legacy types and rel-keyed edges', () => {
   assert(!looksLikeOldMap(g([n('q1', 'question')], [e('q1', 'x', 'q1')])));
 });
 
+test('a current-format graph is never mistaken for an old map', () => {
+  // `experiment` is a current type; a graph full of them must not be migrated,
+  // because the migration would strip nature / description / result.
+  const current = g([
+    n('ex1', 'experiment', { nature: 'statistical', description: 'what was done', result: 'what came out' }),
+    n('q1', 'question'),
+  ], [e('ex1', 'addresses', 'q1')]);
+  assert(!looksLikeOldMap(current), 'version 2 alone settles it');
+  const noVersion = { nodes: current.nodes, edges: current.edges };
+  assert(!looksLikeOldMap(noVersion), 'and so do the fields the current schema introduced');
+  const result = importText(JSON.stringify(current));
+  assert(result.ok, result.message);
+  const ex1 = result.graph.nodes.find((x) => x.id === 'ex1');
+  assertEqual(ex1.nature, 'statistical', 'nature survives the import');
+  assertEqual(ex1.result, 'what came out', 'the result survives the import');
+  assert(!result.message.includes('Simplified'), 'and it is not reported as a migration');
+});
+
+test('a parent field alone marks a graph as current', () => {
+  const current = { nodes: [n('q1', 'question'), n('q2', 'question', { parent: 'q1' })], edges: [] };
+  assert(!looksLikeOldMap(current));
+});
+
 test('results merge into the experiment that yielded them', () => {
   const { graph, report } = migrateOldMap(oldMap);
   const byId = new Map(graph.nodes.map((x) => [x.id, x]));
