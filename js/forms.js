@@ -1,18 +1,13 @@
-// Edit dialogs: node form, relation form, delete confirmations, raw JSON tab.
-// The forms are schema-driven — they only ever offer statuses valid for the
-// chosen type and relations valid between the two types being connected, so
-// invalid graphs are hard to build rather than merely detectable.
+// Edit dialogs: node form, link form, delete confirmations, raw JSON tab.
+// The forms suggest rather than constrain — statuses, natures and relations
+// are all free text with a datalist behind them.
 
-import {
-  NODE_TYPES, statusesFor, validRelations, validateGraph, edgeKey,
-} from './schema.js';
+import { NODE_TYPES, TYPE_HINTS, statusesFor, validateGraph, edgeKey } from './schema.js';
 
 // ---- pure helpers (unit-tested from tests.html) ----------------------------
 
 export const ID_PREFIXES = {
-  question: 'q', gap: 'gap', construct: 'con', source: 'src', study: 'st',
-  method: 'm', material: 'mat', finding: 'f', claim: 'claim', note: 'note',
-  task: 'task',
+  question: 'q', experiment: 'ex', source: 'src', note: 'note',
 };
 
 export function slugify(label) {
@@ -36,16 +31,27 @@ export function uniqueNodeId(type, label, existingIds) {
   return `${base}-${n}`;
 }
 
-// Every relation legal between a fixed node and another, in either direction.
-export function directedRelationOptions(thisType, otherType) {
-  return [
-    ...validRelations(thisType, otherType).map((relation) => ({ relation, direction: 'out' })),
-    ...validRelations(otherType, thisType).map((relation) => ({ relation, direction: 'in' })),
-  ];
-}
-
 function truncate(text, max = 34) {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+// A question cannot be its own ancestor; offer only nodes that keep the tree
+// acyclic.
+export function eligibleParents(graph, nodeId) {
+  const questions = graph.nodes.filter((n) => n.type === 'question' && n.id !== nodeId);
+  if (!nodeId) return questions;
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+  const isDescendant = (candidate) => {
+    let cursor = byId.get(candidate);
+    const seen = new Set();
+    while (cursor?.parent && !seen.has(cursor.id)) {
+      seen.add(cursor.id);
+      if (cursor.parent === nodeId) return true;
+      cursor = byId.get(cursor.parent);
+    }
+    return false;
+  };
+  return questions.filter((q) => !isDescendant(q.id));
 }
 
 // ---- dialog factory --------------------------------------------------------
@@ -57,11 +63,16 @@ export function createForms(callbacks) {
     nodeForm: $('node-form'),
     nodeTitle: $('node-dialog-title'),
     nodeType: $('node-type'),
+    nodeHint: $('node-type-hint'),
     nodeLabel: $('node-label'),
-    nodeStatusWrap: $('node-status-wrap'),
     nodeStatus: $('node-status'),
-    nodeKindWrap: $('node-kind-wrap'),
-    nodeKind: $('node-kind'),
+    statusOptions: $('status-options'),
+    expFields: $('experiment-fields'),
+    nodeNature: $('node-nature'),
+    nodeDescription: $('node-description'),
+    nodeResult: $('node-result'),
+    parentWrap: $('node-parent-wrap'),
+    nodeParent: $('node-parent'),
     fieldRows: $('field-rows'),
     addFieldRow: $('add-field-row'),
     nodeIdPreview: $('node-id-preview'),
@@ -70,6 +81,7 @@ export function createForms(callbacks) {
     edgeForm: $('edge-form'),
     edgeSource: $('edge-source'),
     edgeOther: $('edge-other'),
+    edgeDirection: $('edge-direction'),
     edgeRelation: $('edge-relation'),
     edgeError: $('edge-error'),
     confirmDialog: $('confirm-dialog'),
@@ -93,9 +105,9 @@ export function createForms(callbacks) {
 
   // ---- node form -----------------------------------------------------------
 
-  // null while adding; holds the node being edited otherwise
-  let editingNode = null;
+  let editingNode = null; // null while adding
   let knownIds = new Set();
+  let graphRef = { nodes: [], edges: [] };
 
   for (const type of NODE_TYPES) {
     const option = document.createElement('option');
@@ -104,21 +116,36 @@ export function createForms(callbacks) {
     els.nodeType.append(option);
   }
 
-  function fillStatusSelect(type, selected) {
-    const vocab = statusesFor(type) ?? [];
-    els.nodeStatusWrap.hidden = vocab.length === 0;
-    els.nodeStatus.replaceChildren();
-    for (const status of vocab) {
+  function fillStatusOptions(type) {
+    els.statusOptions.replaceChildren();
+    for (const status of statusesFor(type)) {
       const option = document.createElement('option');
       option.value = status;
-      option.textContent = status;
-      els.nodeStatus.append(option);
+      els.statusOptions.append(option);
     }
+  }
+
+  function fillParentOptions(selected) {
+    els.nodeParent.replaceChildren();
     const none = document.createElement('option');
     none.value = '';
-    none.textContent = '(no status)';
-    els.nodeStatus.append(none);
-    els.nodeStatus.value = selected ?? vocab[0] ?? '';
+    none.textContent = '(none — this is a root question)';
+    els.nodeParent.append(none);
+    for (const q of eligibleParents(graphRef, editingNode?.id)) {
+      const option = document.createElement('option');
+      option.value = q.id;
+      option.textContent = truncate(q.label, 56);
+      els.nodeParent.append(option);
+    }
+    els.nodeParent.value = selected ?? '';
+  }
+
+  function applyType(type, node) {
+    els.nodeHint.textContent = TYPE_HINTS[type] ?? '';
+    fillStatusOptions(type);
+    els.expFields.hidden = type !== 'experiment';
+    els.parentWrap.hidden = type !== 'question';
+    if (type === 'question') fillParentOptions(node?.parent);
   }
 
   function addFieldRow(name = '', value = '') {
@@ -163,29 +190,26 @@ export function createForms(callbacks) {
       : '';
   }
 
-  function updateKindVisibility(type, selected) {
-    els.nodeKindWrap.hidden = type !== 'claim';
-    els.nodeKind.value = selected ?? 'empirical';
-  }
-
   els.nodeType.addEventListener('change', () => {
-    fillStatusSelect(els.nodeType.value);
-    updateKindVisibility(els.nodeType.value);
+    applyType(els.nodeType.value);
     updateIdPreview();
   });
   els.nodeLabel.addEventListener('input', updateIdPreview);
   els.addFieldRow.addEventListener('click', () => addFieldRow());
 
-  function openNodeDialog(node, existingIds) {
+  function openNodeDialog(node, graph, existingIds) {
     editingNode = node ?? null;
-    knownIds = existingIds;
+    graphRef = graph;
+    knownIds = existingIds ?? new Set(graph.nodes.map((n) => n.id));
     els.nodeTitle.textContent = node ? 'Edit node' : 'Add node';
-    els.nodeType.value = node?.type ?? 'question';
-    els.nodeType.disabled = Boolean(node);
-    els.nodeType.title = node ? 'Type cannot change; delete and recreate instead' : '';
+    els.nodeType.value = node?.type && NODE_TYPES.includes(node.type) ? node.type : 'question';
+    els.nodeType.disabled = Boolean(node) && !NODE_TYPES.includes(node?.type);
     els.nodeLabel.value = node?.label ?? '';
-    fillStatusSelect(els.nodeType.value, node?.status);
-    updateKindVisibility(els.nodeType.value, node?.kind);
+    els.nodeStatus.value = node?.status ?? '';
+    els.nodeNature.value = node?.nature ?? '';
+    els.nodeDescription.value = node?.description ?? '';
+    els.nodeResult.value = node?.result ?? '';
+    applyType(els.nodeType.value, node);
     els.fieldRows.replaceChildren();
     for (const [name, value] of Object.entries(node?.fields ?? {})) {
       addFieldRow(name, value);
@@ -202,49 +226,35 @@ export function createForms(callbacks) {
       showError(els.nodeError, 'A label is required.');
       return;
     }
-    const status = els.nodeStatusWrap.hidden ? '' : els.nodeStatus.value;
-    const kind = els.nodeKindWrap.hidden ? undefined : els.nodeKind.value;
-    const fields = collectFields();
+    const type = els.nodeType.disabled ? editingNode.type : els.nodeType.value;
+    const patch = {
+      label,
+      status: els.nodeStatus.value.trim(),
+      nature: type === 'experiment' ? els.nodeNature.value.trim() : '',
+      description: type === 'experiment' ? els.nodeDescription.value.trim() : '',
+      result: type === 'experiment' ? els.nodeResult.value.trim() : '',
+      parent: type === 'question' ? els.nodeParent.value : '',
+      fields: collectFields(),
+    };
     if (editingNode) {
-      callbacks.onUpdateNode(editingNode.id, { label, status, kind, fields });
+      callbacks.onUpdateNode(editingNode.id, patch);
     } else {
-      const type = els.nodeType.value;
       const node = { id: uniqueNodeId(type, label, knownIds), type, label };
-      if (kind) node.kind = kind;
-      if (status) node.status = status;
-      if (fields) node.fields = fields;
+      if (patch.status) node.status = patch.status;
+      if (patch.nature) node.nature = patch.nature;
+      if (patch.description) node.description = patch.description;
+      if (patch.result) node.result = patch.result;
+      if (patch.parent) node.parent = patch.parent;
+      if (patch.fields) node.fields = patch.fields;
       callbacks.onCreateNode(node);
     }
     els.nodeDialog.close();
   });
 
-  // ---- relation form -------------------------------------------------------
+  // ---- link form -----------------------------------------------------------
 
   let edgeAnchor = null;
   let edgeGraph = null;
-
-  function fillRelationSelect() {
-    const other = edgeGraph.nodes.find((n) => n.id === els.edgeOther.value);
-    els.edgeRelation.replaceChildren();
-    showError(els.edgeError, '');
-    if (!other) return;
-    const options = directedRelationOptions(edgeAnchor.type, other.type);
-    for (const { relation, direction } of options) {
-      const option = document.createElement('option');
-      option.value = `${direction}:${relation}`;
-      option.textContent = direction === 'out'
-        ? `${truncate(edgeAnchor.label, 22)} —${relation}→ ${truncate(other.label, 22)}`
-        : `${truncate(other.label, 22)} —${relation}→ ${truncate(edgeAnchor.label, 22)}`;
-      els.edgeRelation.append(option);
-    }
-    els.edgeRelation.disabled = options.length === 0;
-    if (options.length === 0) {
-      showError(
-        els.edgeError,
-        `The schema allows no relation between ${edgeAnchor.type} and ${other.type}.`,
-      );
-    }
-  }
 
   function openEdgeDialog(anchor, graph) {
     edgeAnchor = anchor;
@@ -257,9 +267,7 @@ export function createForms(callbacks) {
       if (!byType.has(node.type)) byType.set(node.type, []);
       byType.get(node.type).push(node);
     }
-    for (const type of NODE_TYPES) {
-      const nodes = byType.get(type);
-      if (!nodes) continue;
+    for (const [type, nodes] of byType) {
       const group = document.createElement('optgroup');
       group.label = type;
       for (const node of nodes) {
@@ -270,23 +278,22 @@ export function createForms(callbacks) {
       }
       els.edgeOther.append(group);
     }
-    fillRelationSelect();
+    els.edgeRelation.value = '';
+    els.edgeDirection.value = 'out';
+    showError(els.edgeError, '');
     els.edgeDialog.showModal();
   }
 
-  els.edgeOther.addEventListener('change', fillRelationSelect);
-
   els.edgeForm.addEventListener('submit', (event) => {
     event.preventDefault();
-    const value = els.edgeRelation.value;
     const otherId = els.edgeOther.value;
-    if (!value || !otherId) return;
-    const [direction, relation] = value.split(':');
-    const edge = direction === 'out'
+    if (!otherId) return;
+    const relation = els.edgeRelation.value.trim();
+    const edge = els.edgeDirection.value === 'out'
       ? { from: edgeAnchor.id, relation, to: otherId }
       : { from: otherId, relation, to: edgeAnchor.id };
     if (edgeGraph.edges.some((e) => edgeKey(e) === edgeKey(edge))) {
-      showError(els.edgeError, 'That edge already exists.');
+      showError(els.edgeError, 'That link already exists.');
       return;
     }
     callbacks.onCreateEdge(edge);
@@ -306,15 +313,23 @@ export function createForms(callbacks) {
   }
 
   function describeEdge(edge, labelOf) {
-    return `${truncate(labelOf(edge.from), 26)} —${edge.relation}→ ${truncate(labelOf(edge.to), 26)}`;
+    const rel = edge.relation ? ` —${edge.relation}→ ` : ' → ';
+    return `${truncate(labelOf(edge.from), 26)}${rel}${truncate(labelOf(edge.to), 26)}`;
   }
 
-  function confirmDeleteNode(node, incidentEdges, labelOf) {
+  function confirmDeleteNode(node, incidentEdges, children, labelOf) {
     const body = [];
     const p = document.createElement('p');
-    p.textContent = incidentEdges.length === 0
-      ? `Delete "${truncate(node.label, 60)}"? It has no edges.`
-      : `Delete "${truncate(node.label, 60)}"? This also removes ${incidentEdges.length} edge${incidentEdges.length === 1 ? '' : 's'}:`;
+    const bits = [];
+    if (incidentEdges.length > 0) {
+      bits.push(`${incidentEdges.length} link${incidentEdges.length === 1 ? '' : 's'}`);
+    }
+    if (children.length > 0) {
+      bits.push(`${children.length} sub-question${children.length === 1 ? '' : 's'} will lose their parent`);
+    }
+    p.textContent = bits.length === 0
+      ? `Delete "${truncate(node.label, 60)}"? Nothing else is attached.`
+      : `Delete "${truncate(node.label, 60)}"? This also removes ${bits.join(', and ')}.`;
     body.push(p);
     if (incidentEdges.length > 0) {
       const list = document.createElement('ul');
@@ -335,8 +350,8 @@ export function createForms(callbacks) {
 
   function confirmDeleteEdge(edge, labelOf) {
     const p = document.createElement('p');
-    p.textContent = `Delete the edge ${describeEdge(edge, labelOf)}?`;
-    openConfirm('Delete edge', [p], () => callbacks.onDeleteEdge(edge));
+    p.textContent = `Delete the link ${describeEdge(edge, labelOf)}?`;
+    openConfirm('Delete link', [p], () => callbacks.onDeleteEdge(edge));
   }
 
   // ---- raw JSON tab --------------------------------------------------------
@@ -368,8 +383,8 @@ export function createForms(callbacks) {
   });
 
   return {
-    openAddNode: (existingIds) => openNodeDialog(null, existingIds),
-    openEditNode: (node) => openNodeDialog(node, new Set()),
+    openAddNode: (graph, existingIds) => openNodeDialog(null, graph, existingIds),
+    openEditNode: (node, graph) => openNodeDialog(node, graph),
     openAddEdge: openEdgeDialog,
     confirmDeleteNode,
     confirmDeleteEdge,

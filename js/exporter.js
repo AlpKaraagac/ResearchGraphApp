@@ -4,7 +4,7 @@
 // .canvas exports round-trip losslessly via the rgNode/rgGraph extra
 // properties the spec tolerates; foreign canvases import best-effort.
 
-import { validateGraph, upgradeGraph, relationAllows, edgeKey } from './schema.js';
+import { validateGraph, edgeKey } from './schema.js';
 import { looksLikeOldMap, migrateOldMap } from './migrate.js';
 
 export function download(filename, text, mime = 'application/json') {
@@ -19,9 +19,7 @@ export function download(filename, text, mime = 'application/json') {
 // ---- JSON Canvas -----------------------------------------------------------
 
 const TYPE_COLORS = {
-  question: '#7048e8', gap: '#9c36b5', construct: '#1971c2', source: '#0c8599',
-  study: '#2f9e44', method: '#66a80f', material: '#099268', finding: '#e8590c',
-  claim: '#e03131', note: '#f08c00', task: '#846358',
+  question: '#7048e8', experiment: '#2f9e44', source: '#0c8599', note: '#f08c00',
 };
 
 const DEFAULT_CARD = { w: 185, h: 72 };
@@ -106,11 +104,11 @@ export function fromCanvas(canvas) {
     const to = byId.get(String(ce.toNode));
     const relation = ce.label;
     const describe = `${ce.fromNode} → ${ce.toNode}${ce.label ? ` (${ce.label})` : ''}`;
-    if (!from || !to || !relation || !relationAllows(relation, from.type, to.type)) {
+    if (!from || !to) {
       report.droppedEdges.push(describe);
       continue;
     }
-    const edge = { from: from.id, relation, to: to.id };
+    const edge = { from: from.id, relation: relation ?? '', to: to.id };
     if (seenEdges.has(edgeKey(edge)) || edge.from === edge.to) {
       report.droppedEdges.push(describe);
       continue;
@@ -173,22 +171,18 @@ export function importText(text) {
         message: `Migrated the old map, but the result is invalid:\n${errors.slice(0, 5).join('\n')}`,
       };
     }
-    const parts = [`${graph.nodes.length} nodes`, `${graph.edges.length} edges kept`];
-    if (report.droppedEdges.length > 0) {
-      parts.push(`${report.droppedEdges.length} edges dropped (no schema equivalent)`);
-    }
-    if (report.approximated.length > 0) parts.push(`${report.approximated.length} approximated as bounds`);
-    if (report.droppedStatuses.length > 0) parts.push(`${report.droppedStatuses.length} statuses dropped`);
+    const parts = [`${graph.nodes.length} nodes`, `${graph.edges.length} links`];
+    if (report.merged > 0) parts.push(`${report.merged} results folded into their experiments`);
+    if (report.becameNotes > 0) parts.push(`${report.becameNotes} other nodes kept as notes`);
     return {
       ok: true,
       graph,
       report,
-      message: `Migrated the old map per SCHEMA.md §7: ${parts.join(', ')}.`,
+      message: `Simplified an older map: ${parts.join(', ')}.`,
     };
   }
   if (looksLikeCanvas(json)) {
     const { graph, report } = fromCanvas(json);
-    upgradeGraph(graph);
     const errors = validateGraph(graph);
     if (errors.length > 0) {
       return { ok: false, message: `Canvas import failed:\n${errors.slice(0, 5).join('\n')}` };
@@ -204,7 +198,6 @@ export function importText(text) {
       message: `Imported ${graph.nodes.length} nodes and ${graph.edges.length} edges from JSON Canvas.${notes ? ` ${notes}` : ''}`,
     };
   }
-  upgradeGraph(json);
   const errors = validateGraph(json);
   if (errors.length > 0) {
     const shown = errors.slice(0, 5).join('\n');
@@ -226,7 +219,7 @@ export function importText(text) {
 // CDNs — the file opens anywhere. Order matters only for readability; the
 // import map resolves dependencies by name.
 const MODULE_NAMES = [
-  'schema', 'lint', 'layout', 'store', 'view', 'render', 'forms', 'sources',
+  'schema', 'layout', 'store', 'view', 'render', 'forms', 'sources',
   'migrate', 'exporter', 'app',
 ];
 

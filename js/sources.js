@@ -271,7 +271,7 @@ export function planSourceImport(graph, cslItems) {
     let n = 2;
     while (allIds.has(id)) id = `${incoming.id}-${n++}`;
     allIds.add(id);
-    const node = { ...incoming, id, status: 'to-read' };
+    const node = { ...incoming, id, status: 'to read' };
     creates.push(node);
     created.add(node);
     if (node.meta?.zoteroKey) byZotero.set(node.meta.zoteroKey, node);

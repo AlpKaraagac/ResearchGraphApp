@@ -1,36 +1,23 @@
 // DOM rendering: node cards in an HTML layer, edges in an SVG layer beneath
-// them, and the detail panel. Pure rendering — state lives in app.js. The
-// incremental add/update/remove methods exist so edits never force a full
-// rebuild (which would re-run layout and destroy the user's mental map).
+// them, and the detail panel. Pure rendering — state lives in app.js.
+//
+// An experiment card carries its own result, so it renders in three parts:
+// its nature, what was done, and what came out.
 
-import { edgeKey } from './schema.js';
-import { LINT_RULES } from './lint.js';
+import { edgeKey, allEdges } from './schema.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-// Visual grouping of statuses only — the vocabulary itself comes from the
-// schema and is not interpreted here beyond a tint.
-const STATUS_TONES = {
-  good: ['answered', 'verified', 'complete', 'supported', 'established', 'read',
-    'run', 'collected', 'frozen', 'done', 'preregistered', 'closed-by-others'],
-  bad: ['abandoned', 'withdrawn', 'invalid', 'contested', 'superseded'],
-  warn: ['unverified', 'to-read', 'todo', 'asserted', 'draft'],
-  info: ['sealed', 'bounded', 'null-with-bound', 'untestable', 'partly-answered',
-    'running', 'doing'],
-};
-
-export function statusTone(status) {
-  for (const [tone, list] of Object.entries(STATUS_TONES)) {
-    if (list.includes(status)) return tone;
-  }
-  return 'neutral';
-}
-
 export function makeStatusPill(status) {
   const pill = document.createElement('span');
-  pill.className = `status tone-${statusTone(status)}`;
+  pill.className = 'status';
   pill.textContent = status;
   return pill;
+}
+
+function truncate(text, max) {
+  const clean = String(text).replace(/\s+/g, ' ').trim();
+  return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 }
 
 export function createRenderer(ui, callbacks) {
@@ -43,15 +30,32 @@ export function createRenderer(ui, callbacks) {
     card.dataset.id = node.id;
     card.replaceChildren();
 
-    const type = document.createElement('span');
-    type.className = 'node-type';
-    type.textContent = node.type;
-    card.append(type);
+    const head = document.createElement('span');
+    head.className = 'node-type';
+    head.textContent = node.type === 'experiment' && node.nature
+      ? `${node.type} · ${node.nature}`
+      : node.type;
+    card.append(head);
 
     const label = document.createElement('span');
     label.className = 'node-label';
     label.textContent = node.label;
     card.append(label);
+
+    if (node.type === 'experiment') {
+      if (node.description) {
+        const desc = document.createElement('span');
+        desc.className = 'node-desc';
+        desc.textContent = truncate(node.description, 110);
+        card.append(desc);
+      }
+      if (node.result) {
+        const result = document.createElement('span');
+        result.className = 'node-result';
+        result.textContent = truncate(node.result, 130);
+        card.append(result);
+      }
+    }
 
     if (node.status) card.append(makeStatusPill(node.status));
 
@@ -90,13 +94,13 @@ export function createRenderer(ui, callbacks) {
   function addEdge(edge) {
     if (!cards.has(edge.from) || !cards.has(edge.to)) return;
     const line = document.createElementNS(SVG_NS, 'line');
-    line.setAttribute('class', 'edge');
+    line.setAttribute('class', edge.derived ? 'edge is-derived' : 'edge');
     line.setAttribute('marker-end', 'url(#arrow)');
     ui.edgeLines.append(line);
 
     const label = document.createElementNS(SVG_NS, 'text');
     label.setAttribute('class', 'edge-label');
-    label.textContent = edge.relation;
+    label.textContent = edge.relation ?? '';
     ui.edgeLabels.append(label);
 
     lines.set(edgeKey(edge), { line, label, edge });
@@ -110,15 +114,21 @@ export function createRenderer(ui, callbacks) {
     lines.delete(key);
   }
 
-  function build(graph) {
-    cards.clear();
+  // Parent links are a field, so any edit that could change one has to
+  // rebuild the derived edges rather than patch a single object.
+  function rebuildEdges(graph) {
     lines.clear();
-    sizes.clear();
-    ui.nodeLayer.replaceChildren();
     ui.edgeLines.replaceChildren();
     ui.edgeLabels.replaceChildren();
+    for (const edge of allEdges(graph)) addEdge(edge);
+  }
+
+  function build(graph) {
+    cards.clear();
+    sizes.clear();
+    ui.nodeLayer.replaceChildren();
     for (const node of graph.nodes) addNode(node);
-    for (const edge of graph.edges) addEdge(edge);
+    rebuildEdges(graph);
   }
 
   // Point on the segment from → to where it crosses the padded card
@@ -200,54 +210,8 @@ export function createRenderer(ui, callbacks) {
 
   return {
     build, position, bounds, setState, sizes,
-    addNode, updateNode, removeNode, addEdge, removeEdge,
+    addNode, updateNode, removeNode, addEdge, removeEdge, rebuildEdges,
   };
-}
-
-// ---- lint panel ------------------------------------------------------------
-
-// Errors and warnings are separate lists with separate counts — blending
-// them means the error count is never zero and stops meaning anything.
-export function renderLintPanel(ui, findings, callbacks) {
-  ui.lintList.replaceChildren();
-  if (findings.length === 0) {
-    const p = document.createElement('p');
-    p.className = 'lint-clean';
-    p.textContent = '✓ No findings — the graph is clean.';
-    ui.lintList.append(p);
-    return;
-  }
-  for (const severity of ['error', 'warning']) {
-    const inSeverity = findings.filter((f) => f.severity === severity);
-    if (inSeverity.length === 0) continue;
-
-    const header = document.createElement('h3');
-    header.className = `lint-severity ${severity}s`;
-    header.textContent = `${severity === 'error' ? 'Errors' : 'Warnings'} · ${inSeverity.length}`;
-    ui.lintList.append(header);
-
-    for (const rule of LINT_RULES) {
-      if (rule.severity !== severity) continue;
-      const matches = inSeverity.filter((f) => f.id === rule.id);
-      if (matches.length === 0) continue;
-
-      const heading = document.createElement('h3');
-      heading.textContent = `${rule.title} · ${matches.length}`;
-      const desc = document.createElement('p');
-      desc.className = 'rule-desc';
-      desc.textContent = rule.description;
-      ui.lintList.append(heading, desc);
-
-      for (const finding of matches) {
-        const row = document.createElement('button');
-        row.type = 'button';
-        row.className = 'lint-row';
-        row.textContent = finding.message;
-        row.addEventListener('click', () => callbacks.onJump(finding.nodeId));
-        ui.lintList.append(row);
-      }
-    }
-  }
 }
 
 // ---- detail panel ----------------------------------------------------------
@@ -261,15 +225,31 @@ export function renderPanel(ui, graph, nodeId, callbacks) {
   ui.detail.hidden = false;
   ui.detail.scrollTop = 0;
 
-  ui.detailType.textContent = node.type;
+  ui.detailType.textContent = node.type === 'experiment' && node.nature
+    ? `${node.type} · ${node.nature}`
+    : node.type;
   ui.detailType.className = `type-tag type-${node.type}`;
   ui.detailLabel.textContent = node.label;
   ui.detailStatus.hidden = !node.status;
   if (node.status) {
     ui.detailStatus.textContent = node.status;
-    ui.detailStatus.className = `status tone-${statusTone(node.status)}`;
+    ui.detailStatus.className = 'status';
   }
   ui.detailId.textContent = node.id;
+
+  // An experiment reads top to bottom: what was done, then what came out.
+  ui.detailBody.replaceChildren();
+  const addBlock = (title, text, className) => {
+    if (!text) return;
+    const h = document.createElement('h3');
+    h.textContent = title;
+    const p = document.createElement('p');
+    p.className = className;
+    p.textContent = text;
+    ui.detailBody.append(h, p);
+  };
+  addBlock('What was done', node.description, 'detail-prose');
+  addBlock('Result', node.result, 'detail-prose detail-result');
 
   ui.detailFields.replaceChildren();
   const addField = (name, value, href) => {
@@ -296,11 +276,12 @@ export function renderPanel(ui, graph, nodeId, callbacks) {
   }
 
   const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
-  const fillRelations = (section, edges, otherEnd) => {
-    const list = section.querySelector('.rel-list');
-    list.replaceChildren();
-    section.hidden = edges.length === 0;
-    for (const edge of edges) {
+  const edges = allEdges(graph);
+  const fillRelations = (section, list, otherEnd) => {
+    const target = section.querySelector('.rel-list');
+    target.replaceChildren();
+    section.hidden = list.length === 0;
+    for (const edge of list) {
       const other = nodeById.get(otherEnd(edge));
       if (!other) continue;
       const row = document.createElement('div');
@@ -312,33 +293,33 @@ export function renderPanel(ui, graph, nodeId, callbacks) {
 
       const name = document.createElement('span');
       name.className = 'rel-name';
-      name.textContent = edge.relation;
+      name.textContent = edge.relation ?? '—';
 
       const dot = document.createElement('span');
       dot.className = 'dot';
 
-      const target = document.createElement('span');
-      target.className = 'rel-target';
-      target.textContent = other.label;
+      const label = document.createElement('span');
+      label.className = 'rel-target';
+      label.textContent = other.label;
 
-      follow.append(name, dot, target);
+      follow.append(name, dot, label);
       follow.addEventListener('click', () => callbacks.onFollow(other.id));
       row.append(follow);
 
-      if (callbacks.onDeleteEdge) {
+      // derived parent links are edited on the node, not deleted here
+      if (callbacks.onDeleteEdge && !edge.derived) {
         const del = document.createElement('button');
         del.type = 'button';
         del.className = 'rel-del';
         del.textContent = '×';
-        del.setAttribute('aria-label',
-          `Delete edge: ${edge.relation} ${other.label}`);
+        del.setAttribute('aria-label', `Delete edge: ${edge.relation ?? 'link'} ${other.label}`);
         del.addEventListener('click', () => callbacks.onDeleteEdge(edge));
         row.append(del);
       }
-      list.append(row);
+      target.append(row);
     }
   };
 
-  fillRelations(ui.detailOutgoing, graph.edges.filter((e) => e.from === nodeId), (e) => e.to);
-  fillRelations(ui.detailIncoming, graph.edges.filter((e) => e.to === nodeId), (e) => e.from);
+  fillRelations(ui.detailOutgoing, edges.filter((e) => e.from === nodeId), (e) => e.to);
+  fillRelations(ui.detailIncoming, edges.filter((e) => e.to === nodeId), (e) => e.from);
 }

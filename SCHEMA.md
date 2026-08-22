@@ -1,3 +1,12 @@
+> **Archived — this describes schema v1.2, which the app no longer enforces.**
+> The tool was deliberately simplified: no lint rules, no closed relation set, no
+> per-type status vocabularies. What it implements now is four node types
+> (`question`, `experiment`, `source`, `note`), sub-questions as a `parent` field, and
+> experiments that carry their own result. See the README for the current model.
+> This file stays because the reasoning in it is worth keeping, and because graphs
+> written under v1.x still import — results are folded into the experiment that
+> produced them.
+
 # Research graph schema v1
 
 A small, opinionated schema for mapping a single research project (thesis, paper, or

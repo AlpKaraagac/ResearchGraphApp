@@ -1,67 +1,75 @@
 # Research graph
 
-**Live demo:** <https://alpkaraagac.github.io/ResearchGraphApp/> · **Tests:** [tests.html](https://alpkaraagac.github.io/ResearchGraphApp/tests.html) · **Schema:** [SCHEMA.md](SCHEMA.md)
+**Live demo:** <https://alpkaraagac.github.io/ResearchGraphApp/> · **Tests:** [tests.html](https://alpkaraagac.github.io/ResearchGraphApp/tests.html)
 
-![The demo graph — a perceiver-effects project — with typed node cards, relation edges, type filters, and the lint badge showing four findings](docs/screenshot.png)
+![The demo graph — questions with sub-questions, and experiments carrying their own results](docs/screenshot.png)
 
-A single-page app for mapping **one research project** as a typed graph: questions,
-gaps, studies, methods, materials, findings, claims, sources. It is deliberately not
-a general mind-map tool — it knows the difference between a finding and a claim,
-between a null result and an untestable one, and between a question you answered and
-one you bounded. Those distinctions are what make the graph *lintable*: the app tells
-you which claims have no findings under them, which questions nothing addresses, and
-which citations you are leaning on but haven't verified. The demo opens with a real
-example project ([examples/demo.json](examples/demo.json)) that deliberately ships
-with four lint findings, so the badge has something to say.
+A single-page app for mapping **one research project** as a graph of nodes. It is
+deliberately simple: no lint, no rules about what may connect to what, no vocabularies
+to learn. You write down what you are asking and what you did, and the tool draws it,
+saves it, and lets you carry it around.
 
 Plain HTML, CSS and ES modules. No build step, no framework, no dependencies, no
 backend, no accounts, no analytics. The graph is one JSON object; everything else is
-rendering. Work is autosaved to `localStorage` per graph — the toolbar always shows
+rendering. Work is autosaved to `localStorage` per graph, and the toolbar always shows
 whether it is stored.
+
+## The model
+
+Four node types, and only three things you really need:
+
+**`question`** — something the project asks. Give a question a **parent** and it becomes
+a sub-question; the tree is drawn for you with dashed links, so you never manage those
+edges by hand.
+
+**`experiment`** — one investigation *and what it returned*, in a single node:
+
+- **nature** — what kind of thing it is: statistical, computational, qualitative,
+  simulation, theoretical, literature, replication, or anything else you type
+- **what the experiment was** — design, data, procedure
+- **result** — what came out of it, including nulls
+
+Merging the experiment and its result into one node is the point: a result never
+drifts away from the thing that produced it, and reading the card tells you what was
+done and what happened, in that order.
+
+**`source`** — a citable work. **`note`** — a caveat, a decision, a reminder.
+
+Everything else is optional. Links between nodes take a free-text label (or none).
+Statuses are suggestions, not vocabularies. Nothing is validated beyond "this node has
+an id, a type and a label", so the tool never argues with you about how you work.
 
 ## What it does
 
-- **Render** — force-directed layout over a pannable, zoomable canvas; nodes as
-  cards styled per type with a status flag; tap a node to dim everything not
-  adjacent and open a detail panel whose relations are links you can follow.
-  Mobile-first: the panel is a bottom sheet, the add-node flow a full-screen form.
-- **Edit** — add, edit and delete nodes and edges. Forms offer only the statuses
-  valid for the chosen type and only the relations the schema allows between the
-  two types being connected; deleting a node warns about the edges it takes with
-  it. A raw-JSON tab (with validation) covers bulk edits.
-- **Lint** — the eight rules from [SCHEMA.md §4](SCHEMA.md), live-counted in the
-  toolbar; each finding jumps to the offending node.
-- **Share** — export the graph as JSON, as [JSON Canvas](https://jsoncanvas.org)
-  (`.canvas`, readable in Obsidian; round-trips losslessly), or as a
-  **self-contained HTML file** with the whole viewer inlined — mail it to a
-  colleague and they see exactly what you see, from a double-click, with nothing
-  installed. Import accepts JSON, `.canvas`, and a self-contained HTML export
-  itself — drop the file on the app and its graph becomes the current one.
+- **Render** — force-directed layout over a pannable, zoomable canvas, with cards
+  styled per type. Tap a node to dim everything not adjacent and open a detail panel
+  whose links you can follow. Mobile-first: the panel is a bottom sheet, the add-node
+  flow a full-screen form. **Spread** recomputes the layout; overlapping cards are
+  separated automatically on load.
+- **Edit** — add, edit and delete nodes and links. Deleting a node warns about what it
+  takes with it. A raw-JSON tab covers bulk edits.
+- **Share** — export as graph JSON, as [JSON Canvas](https://jsoncanvas.org) (`.canvas`,
+  readable in Obsidian), or as a **self-contained HTML file** with the whole viewer
+  inlined — mail it to a colleague and they see exactly what you see, from a
+  double-click, with nothing installed. Import accepts all three back.
 - **Sources** — paste or drop a CSL-JSON or BibTeX export and each item becomes a
-  `source` node; re-importing updates rather than duplicates (matched on Zotero
-  key, then DOI, then citation key). Optional one-way pull from the
-  [Zotero Web API](https://www.zotero.org/support/dev/web_api/v3/start), behind an
-  API key that never leaves your browser.
+  `source` node; re-importing updates rather than duplicating (matched on Zotero key,
+  then DOI, then citation key). Optional one-way pull from the
+  [Zotero Web API](https://www.zotero.org/support/dev/web_api/v3/start), behind an API
+  key that never leaves your browser.
 
-## Schema summary
+## Importing an older map
 
-Eleven node types in four families, each with its own status vocabulary
-(see [SCHEMA.md](SCHEMA.md) for the full definitions):
+Graphs written under the earlier, stricter schema (see [SCHEMA.md](SCHEMA.md), archived)
+import automatically and are simplified on the way in:
 
-| Family | Types |
-|---|---|
-| Asking | `question` (open / answered / partly-answered / bounded / abandoned) · `gap` (asserted / verified / contested / closed-by-others) |
-| Grounding | `construct` · `source` (to-read / read / verified / unverified) |
-| Doing | `study` (planned / running / complete / abandoned) · `method` (draft / preregistered / run / superseded) · `material` (planned / collected / frozen) |
-| Concluding | `finding` (supported / null-with-bound / untestable / sealed / withdrawn / invalid) · `claim` (established / provisional / contested / abandoned) · `note` · `task` (todo / doing / done) |
-
-Fourteen relations form a closed set with fixed from → to types — `asks`,
-`motivates`, `addresses`, `uses`, `yields`, `supports`, `contradicts`, `bounds`,
-`qualifies`, `answers`, `grounds`, `threatens`, `inspires`, `blocks` — and eight
-lint rules check the graph: unsupported claim, orphan finding, unaddressed
-question, unwarranted question, bare study, unverified citation, unhandled threat,
-and status mismatch (a question marked answered whose only supporting findings are
-untestable, sealed or withdrawn).
+- `rq` → question, and `asks` edges become `parent` fields
+- `study` / `experiment` → experiment, with **its findings folded into its result**
+- `paper` → source
+- everything else (claims, gaps, constructs, methods, materials, tasks) is kept as a
+  note, tagged with what it used to be — nothing is discarded
+- links keep their labels, and a link that pointed at a folded-in result now points at
+  the experiment
 
 ## Running it
 
@@ -71,27 +79,26 @@ It is a static site — any static server works:
 python3 -m http.server 4173
 ```
 
-then open <http://localhost:4173>. (Opening `index.html` straight from `file://`
-is blocked by Chrome and Firefox, which refuse module imports from file pages —
-the self-contained HTML *export* is the artifact that opens anywhere, including
-`file://`.) The tests are a plain page with no runner: open
-[tests.html](https://alpkaraagac.github.io/ResearchGraphApp/tests.html) and read
-the green.
+then open <http://localhost:4173>. (Opening `index.html` straight from `file://` is
+blocked by Chrome and Firefox, which refuse module imports from file pages — the
+self-contained HTML *export* is the artifact that opens anywhere.) The tests are a
+plain page with no runner: open [tests.html](https://alpkaraagac.github.io/ResearchGraphApp/tests.html)
+and read the green.
 
 ## Layout of the repo
 
 ```
 index.html        app shell
 css/app.css       all styles (mobile-first)
-js/schema.js      types, statuses, relations, validation — mirrors SCHEMA.md
-js/lint.js        the eight lint rules
-js/layout.js      deterministic force-directed layout
-js/render.js      cards, edges, panels
+js/schema.js      the four types, parent links, structural validation
+js/layout.js      force-directed layout + exact card de-overlap
+js/render.js      cards, edges, detail panel
 js/view.js        pan / zoom / fit
-js/forms.js       schema-driven edit dialogs
+js/forms.js       add and edit dialogs
 js/exporter.js    JSON, JSON Canvas, self-contained HTML
+js/migrate.js     older maps in, results folded into experiments
 js/sources.js     CSL-JSON + BibTeX import, Zotero Web API
 js/store.js       localStorage persistence
-tests.html        74 assertion tests, no runner
+tests.html        assertion tests, no runner
 examples/         the demo graph
 ```

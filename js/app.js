@@ -1,13 +1,11 @@
 // App state and wiring: loading, persistence, selection, search, filters,
-// and every graph mutation. Mutations go through small handlers that update
-// the graph, patch the render incrementally, and save — the graph in
-// localStorage is never allowed to drift from what is on screen.
+// and every graph mutation. No lint and no rules — the graph is whatever the
+// author says it is; the app's job is to render it and not lose it.
 
-import { NODE_TYPES, validateGraph, upgradeGraph, edgeKey } from './schema.js';
-import { lint } from './lint.js';
+import { NODE_TYPES, validateGraph, edgeKey, allEdges, childrenOf } from './schema.js';
 import { createLayout, separateRects } from './layout.js';
 import { createView } from './view.js';
-import { createRenderer, renderPanel, renderLintPanel } from './render.js';
+import { createRenderer, renderPanel } from './render.js';
 import { createForms, slugify } from './forms.js';
 import { toCanvas, importText, buildSelfContainedHtml, download } from './exporter.js';
 import {
@@ -33,14 +31,11 @@ const ui = {
   detailType: $('detail-type'),
   detailStatus: $('detail-status'),
   detailLabel: $('detail-label'),
+  detailBody: $('detail-body'),
   detailFields: $('detail-fields'),
   detailOutgoing: $('detail-outgoing'),
   detailIncoming: $('detail-incoming'),
   detailId: $('detail-id'),
-  lintPanel: $('lint-panel'),
-  lintList: $('lint-list'),
-  lintErrors: $('lint-errors'),
-  lintWarnings: $('lint-warnings'),
   shareDialog: $('share-dialog'),
   shareInfo: $('share-info'),
   shareError: $('share-error'),
@@ -62,7 +57,7 @@ const state = {
   selected: null,
   neighbors: new Set(),
   search: '',
-  shownTypes: null, // null = no filter (all types visible); a Set isolates those types
+  shownTypes: null, // null = no filter; a Set isolates those types
   saveFailed: false,
 };
 
@@ -73,6 +68,14 @@ const renderer = createRenderer(ui, { onSelect: (id) => select(id) });
 
 const nodeById = (id) => state.graph.nodes.find((n) => n.id === id);
 const labelOf = (id) => nodeById(id)?.label ?? id;
+
+// Every type present in the graph, so nodes written under the older schema
+// still get a filter chip and a colour.
+function typesInGraph() {
+  const seen = new Set(NODE_TYPES);
+  for (const node of state.graph.nodes) seen.add(node.type);
+  return [...seen];
+}
 
 // ---- persistence -----------------------------------------------------------
 
@@ -103,7 +106,6 @@ function persist() {
   syncPositionsIntoGraph();
   const result = store.save(state.graph);
   setSaveIndicator(result.ok);
-  refreshLint();
 }
 
 window.addEventListener('beforeunload', (event) => {
@@ -119,7 +121,8 @@ function matchesSearch(node) {
   const q = state.search;
   if (!q) return true;
   const haystack = [
-    node.label, node.id, node.type, node.status ?? '',
+    node.label, node.id, node.type, node.status ?? '', node.nature ?? '',
+    node.description ?? '', node.result ?? '',
     ...Object.values(node.fields ?? {}),
   ].join('\n').toLowerCase();
   return haystack.includes(q);
@@ -141,7 +144,7 @@ function applyVisibility() {
 
 function refreshEmptyState() {
   if (state.graph && state.graph.nodes.length === 0) {
-    showEmpty('The graph is empty — tap ＋ to add the first node.');
+    showEmpty('The graph is empty — tap ＋ to add the first question.');
   } else {
     ui.emptyState.hidden = true;
   }
@@ -151,10 +154,9 @@ function refreshEmptyState() {
 
 function select(id, { center = false } = {}) {
   if (!nodeById(id)) return;
-  ui.lintPanel.hidden = true; // the two sheets share the same space
   state.selected = id;
   state.neighbors = new Set();
-  for (const edge of state.graph.edges) {
+  for (const edge of allEdges(state.graph)) {
     if (edge.from === id) state.neighbors.add(edge.to);
     if (edge.to === id) state.neighbors.add(edge.from);
   }
@@ -181,54 +183,12 @@ ui.canvas.addEventListener('click', (event) => {
   // a detached target has no ancestors, which would read as a background click
   if (!event.target.isConnected) return;
   if (event.target.closest('#add-node-btn')) return;
-  if (event.target.closest('#detail') || event.target.closest('#lint-panel')) return;
+  if (event.target.closest('#detail')) return;
   if (!event.target.closest('.node')) deselect();
 });
 $('detail-close').addEventListener('click', deselect);
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && !document.querySelector('dialog[open]')) {
-    if (!ui.lintPanel.hidden) ui.lintPanel.hidden = true;
-    else deselect();
-  }
-});
-
-// ---- lint ------------------------------------------------------------------
-
-function jumpToFinding(nodeId) {
-  const node = nodeById(nodeId);
-  if (!node) return;
-  if (isTypeHidden(node.type)) {
-    state.shownTypes = null; // a hidden offender must become visible to be shown
-    updateChipStates();
-  }
-  ui.lintPanel.hidden = true;
-  select(nodeId, { center: true });
-}
-
-function refreshLint() {
-  state.lint = lint(state.graph);
-  const errors = state.lint.filter((f) => f.severity === 'error').length;
-  const warnings = state.lint.length - errors;
-  ui.lintErrors.textContent = String(errors);
-  ui.lintErrors.classList.toggle('clean', errors === 0);
-  ui.lintWarnings.textContent = String(warnings);
-  ui.lintWarnings.classList.toggle('clean', warnings === 0);
-  if (!ui.lintPanel.hidden) {
-    renderLintPanel(ui, state.lint, { onJump: jumpToFinding });
-  }
-}
-
-$('lint-btn').addEventListener('click', () => {
-  if (!ui.lintPanel.hidden) {
-    ui.lintPanel.hidden = true;
-    return;
-  }
-  deselect();
-  renderLintPanel(ui, state.lint ?? [], { onJump: jumpToFinding });
-  ui.lintPanel.hidden = false;
-});
-$('lint-close').addEventListener('click', () => {
-  ui.lintPanel.hidden = true;
+  if (event.key === 'Escape' && !document.querySelector('dialog[open]')) deselect();
 });
 
 // ---- mutations -------------------------------------------------------------
@@ -238,6 +198,7 @@ const forms = createForms({
     state.graph.nodes.push(node);
     state.positions.set(node.id, view.worldCenter());
     renderer.addNode(node);
+    renderer.rebuildEdges(state.graph); // a parent link is an edge to draw
     renderer.position(state.positions);
     buildFilterChips();
     refreshEmptyState();
@@ -249,12 +210,14 @@ const forms = createForms({
     const node = nodeById(id);
     if (!node) return;
     node.label = patch.label;
-    if (patch.kind && node.type === 'claim') node.kind = patch.kind;
-    if (patch.status) node.status = patch.status;
-    else delete node.status;
+    for (const key of ['status', 'nature', 'description', 'result', 'parent']) {
+      if (patch[key]) node[key] = patch[key];
+      else delete node[key];
+    }
     if (patch.fields) node.fields = patch.fields;
     else delete node.fields;
     renderer.updateNode(node);
+    renderer.rebuildEdges(state.graph);
     renderer.position(state.positions); // size may have changed → re-trim edges
     applyVisibility();
     if (state.selected === id) select(id);
@@ -262,13 +225,14 @@ const forms = createForms({
   },
 
   onDeleteNode(id) {
-    state.graph.edges = state.graph.edges.filter((edge) => {
-      const gone = edge.from === id || edge.to === id;
-      if (gone) renderer.removeEdge(edgeKey(edge));
-      return !gone;
-    });
+    state.graph.edges = state.graph.edges.filter(
+      (edge) => edge.from !== id && edge.to !== id,
+    );
+    for (const child of childrenOf(state.graph, id)) delete child.parent;
     state.graph.nodes = state.graph.nodes.filter((n) => n.id !== id);
     renderer.removeNode(id);
+    renderer.rebuildEdges(state.graph);
+    renderer.position(state.positions);
     state.positions.delete(id);
     deselect();
     buildFilterChips();
@@ -301,12 +265,26 @@ const forms = createForms({
 });
 
 $('add-node-btn').addEventListener('click', () => {
-  forms.openAddNode(new Set(state.graph.nodes.map((n) => n.id)));
+  forms.openAddNode(state.graph, new Set(state.graph.nodes.map((n) => n.id)));
 });
 $('json-btn').addEventListener('click', () => {
   ui.shareDialog.close();
   syncPositionsIntoGraph();
   forms.openJson(JSON.stringify(state.graph, null, 2));
+});
+$('detail-edit').addEventListener('click', () => {
+  const node = nodeById(state.selected);
+  if (node) forms.openEditNode(node, state.graph);
+});
+$('detail-add-edge').addEventListener('click', () => {
+  const node = nodeById(state.selected);
+  if (node) forms.openAddEdge(node, state.graph);
+});
+$('detail-delete').addEventListener('click', () => {
+  const node = nodeById(state.selected);
+  if (!node) return;
+  const incident = state.graph.edges.filter((e) => e.from === node.id || e.to === node.id);
+  forms.confirmDeleteNode(node, incident, childrenOf(state.graph, node.id), labelOf);
 });
 
 // ---- share: export and import ----------------------------------------------
@@ -348,7 +326,7 @@ $('export-html').addEventListener('click', async () => {
   try {
     const html = await buildSelfContainedHtml(state.graph);
     download(`${fileSlug()}.html`, html, 'text/html');
-    shareMessage('Self-contained HTML downloaded — it opens anywhere, even from a file:// double-click, with nothing installed.');
+    shareMessage('Self-contained HTML downloaded — it opens anywhere, with nothing installed.');
   } catch (error) {
     shareMessage(`Could not build the HTML export: ${error.message}`, true);
   }
@@ -388,8 +366,6 @@ function openSourcesDialog() {
   ui.sourcesDialog.showModal();
 }
 
-// Applies a planned import: updates in place, creates fanned out around the
-// current view centre so a big batch doesn't land in one pile.
 function applySourceImport(plan) {
   for (const { id, patch } of plan.updates) {
     const node = nodeById(id);
@@ -481,8 +457,6 @@ ui.zoteroPullBtn.addEventListener('click', async () => {
 
 // ---- drag and drop ---------------------------------------------------------
 
-// Dropping a file or text anywhere routes by content: graph or canvas JSON
-// replaces the graph; CSL-JSON or BibTeX goes through the sources import.
 window.addEventListener('dragover', (event) => event.preventDefault());
 window.addEventListener('drop', async (event) => {
   event.preventDefault();
@@ -490,7 +464,7 @@ window.addEventListener('drop', async (event) => {
   const text = file ? await file.text() : event.dataTransfer?.getData('text/plain');
   if (!text?.trim()) return;
 
-  let isGraphish = text.trim().startsWith('<'); // exported HTML with an embedded graph
+  let isGraphish = text.trim().startsWith('<');
   if (!isGraphish) {
     try {
       isGraphish = Array.isArray(JSON.parse(text).nodes);
@@ -513,22 +487,6 @@ window.addEventListener('drop', async (event) => {
   ui.sourcesText.value = text;
   importSourcesFromText(text, file ? `Imported from ${file.name}` : 'Imported from drop');
 });
-$('detail-edit').addEventListener('click', () => {
-  const node = nodeById(state.selected);
-  if (node) forms.openEditNode(node);
-});
-$('detail-add-edge').addEventListener('click', () => {
-  const node = nodeById(state.selected);
-  if (node) forms.openAddEdge(node, state.graph);
-});
-$('detail-delete').addEventListener('click', () => {
-  const node = nodeById(state.selected);
-  if (!node) return;
-  const incident = state.graph.edges.filter(
-    (e) => e.from === node.id || e.to === node.id,
-  );
-  forms.confirmDeleteNode(node, incident, labelOf);
-});
 
 // ---- search and filters ----------------------------------------------------
 
@@ -549,7 +507,7 @@ function buildFilterChips() {
   for (const node of state.graph.nodes) {
     counts.set(node.type, (counts.get(node.type) ?? 0) + 1);
   }
-  for (const type of NODE_TYPES) {
+  for (const type of typesInGraph()) {
     const chip = document.createElement('button');
     chip.type = 'button';
     chip.className = `chip type-${type}`;
@@ -577,9 +535,7 @@ function buildFilterChips() {
         state.shownTypes.add(type);
       }
       updateChipStates();
-      if (state.selected && isTypeHidden(nodeById(state.selected)?.type)) {
-        deselect();
-      }
+      if (state.selected && isTypeHidden(nodeById(state.selected)?.type)) deselect();
       applyVisibility();
     });
     ui.filters.append(chip);
@@ -596,9 +552,6 @@ $('relayout').addEventListener('click', () => startLayout());
 
 // ---- layout ----------------------------------------------------------------
 
-// Settles synchronously: layout is fast at this scale, and an animated settle
-// can be interrupted (throttled tabs, quick reloads), which would leave the
-// graph half-arranged and the stored positions unwritten.
 function startLayout() {
   const radii = new Map();
   for (const [id, size] of renderer.sizes) {
@@ -606,14 +559,14 @@ function startLayout() {
   }
   const layout = createLayout(
     state.graph.nodes.map((n) => n.id),
-    state.graph.edges,
+    allEdges(state.graph),
     { radii, sizes: renderer.sizes },
   );
   layout.settle();
   state.positions = layout.positions();
   renderer.position(state.positions);
   view.fit(renderer.bounds(state.positions), { animate: false });
-  persist(); // stored positions make the next load instant and stable
+  persist();
 }
 
 // ---- loading ---------------------------------------------------------------
@@ -625,6 +578,7 @@ function showEmpty(message) {
 
 function adoptGraph(graph) {
   state.graph = graph;
+  state.graph.edges ??= [];
   state.selected = null;
   state.neighbors = new Set();
   ui.detail.hidden = true;
@@ -653,24 +607,22 @@ function adoptGraph(graph) {
   } else {
     state.positions = new Map();
   }
-  refreshLint();
 }
 
 async function loadInitialGraph() {
   // A self-contained export carries its graph inside the file. It wins over
-  // localStorage unless this browser holds a NEWER edit of the same graph —
-  // reopening the file must never silently discard someone's edits.
+  // localStorage unless this browser holds a NEWER edit of the same graph.
   const embeddedEl = document.getElementById('embedded-graph');
   if (embeddedEl) {
     let embedded = null;
     try {
-      embedded = upgradeGraph(JSON.parse(embeddedEl.textContent));
+      embedded = JSON.parse(embeddedEl.textContent);
     } catch { /* falls through to the error below */ }
     if (!embedded || validateGraph(embedded).length > 0) {
       showEmpty('The graph embedded in this file is invalid.');
       return;
     }
-    const stored = upgradeGraph(store.load(embedded.meta?.id));
+    const stored = store.load(embedded.meta?.id);
     const storedIsNewer = stored
       && validateGraph(stored).length === 0
       && (stored.meta?.modified ?? '') > (embedded.meta?.modified ?? '');
@@ -679,7 +631,7 @@ async function loadInitialGraph() {
     return;
   }
 
-  const saved = upgradeGraph(store.loadCurrent());
+  const saved = store.loadCurrent();
   if (saved) {
     const errors = validateGraph(saved);
     if (errors.length === 0) {
@@ -693,7 +645,7 @@ async function loadInitialGraph() {
   try {
     const response = await fetch('examples/demo.json');
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const graph = upgradeGraph(await response.json());
+    const graph = await response.json();
     const errors = validateGraph(graph);
     if (errors.length > 0) {
       showEmpty(`The example graph is invalid: ${errors[0]}`);

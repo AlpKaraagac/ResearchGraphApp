@@ -1,264 +1,145 @@
-// SCHEMA.md §7: migration from the old map format — rq / experiment / result /
-// paper / corpus / venue node types, per-node `detail` prose, and free-text
-// `rel` edges — into schema v1. The mapping is pure and *reported*: everything
-// the closed schema cannot express is dropped loudly, never silently.
+// Bring a graph written under any earlier schema into the simplified one:
+// four types, free-text links, sub-questions as a `parent` field, and — the
+// point of the exercise — results folded into the experiment that produced
+// them, so one node carries its nature, what was done, and what came out.
 
-import { relationAllows, edgeKey } from './schema.js';
 import { slugify } from './forms.js';
 
+// Old type name → new type. Everything not named here becomes a note, with
+// its original type preserved in a field so nothing is silently lost.
 const TYPE_MAP = {
   rq: 'question',
-  experiment: 'study',
-  result: 'finding',
+  question: 'question',
+  experiment: 'experiment',
+  study: 'experiment',
   paper: 'source',
-  corpus: 'material',
-  venue: 'task', // §7: drop venue — make it a task
-  gap: 'gap',
-  construct: 'construct',
-  method: 'method',
-  claim: 'claim',
+  source: 'source',
   note: 'note',
-  task: 'task',
 };
 
-// Old statuses were global; new ones are per type (§2). §7 pins three of
-// these: not-estimable → untestable, established on a finding → supported,
-// established on a claim stays. The rest are the nearest honest word; a
-// status with no honest mapping is dropped and reported.
-const STATUS_MAP = {
-  question: {
-    open: 'open',
-    answered: 'answered',
-    'partly-answered': 'partly-answered',
-    split: 'partly-answered',
-    partial: 'partly-answered',
-    bounded: 'bounded',
-    sealed: 'open', // a question whose evidence is sealed is still open
-    abandoned: 'abandoned',
-  },
-  study: {
-    planned: 'planned',
-    running: 'running',
-    complete: 'complete',
-    established: 'complete',
-    inconclusive: 'complete', // the study ran; its findings carry the verdict
-    untestable: 'complete',
-    sealed: 'running', // computed but gated: not finished yet
-    abandoned: 'abandoned',
-  },
-  finding: {
-    supported: 'supported',
-    established: 'supported',
-    'null-with-bound': 'null-with-bound',
-    'not-estimable': 'untestable',
-    untestable: 'untestable',
-    inconclusive: 'untestable',
-    sealed: 'sealed',
-    withdrawn: 'withdrawn',
-    invalid: 'invalid',
-  },
-  claim: {
-    established: 'established',
-    provisional: 'provisional',
-    contested: 'contested',
-    abandoned: 'abandoned',
-  },
-  source: {
-    'to-read': 'to-read',
-    todo: 'to-read',
-    read: 'read',
-    verified: 'verified',
-    established: 'verified',
-    unverified: 'unverified',
-  },
-  material: {
-    planned: 'planned',
-    collected: 'collected',
-    frozen: 'frozen',
-    established: 'frozen',
-  },
-  task: { todo: 'todo', doing: 'doing', done: 'done' },
-  gap: {
-    asserted: 'asserted',
-    verified: 'verified',
-    contested: 'contested',
-    'closed-by-others': 'closed-by-others',
-  },
-  construct: {},
-  note: {},
-};
+const RESULT_TYPES = ['result', 'finding'];
+const EXPERIMENT_TYPES = ['experiment', 'study'];
+
+// The relation names, across schema versions, that tie a result to the study
+// that produced it. Edges may carry `relation` (v1.x) or `rel` (the original).
+const YIELD_RELS = ['yields', 'headline finding', 'validation', 'audit'];
+
+const relOf = (edge) => String(edge?.relation ?? edge?.rel ?? '').toLowerCase();
 
 export function looksLikeOldMap(json) {
   if (!json || !Array.isArray(json.nodes)) return false;
-  const oldTypes = ['rq', 'experiment', 'result', 'paper', 'corpus', 'venue'];
-  if (json.nodes.some((n) => n && oldTypes.includes(n.type))) return true;
-  return Array.isArray(json.edges)
-    && json.edges.some((e) => e && typeof e.rel === 'string' && e.from !== undefined);
+  const legacyTypes = ['rq', 'experiment', 'result', 'paper', 'corpus', 'venue',
+    'study', 'finding', 'claim', 'gap', 'construct', 'method', 'material', 'task'];
+  if (json.nodes.some((n) => n && legacyTypes.includes(n.type))) return true;
+  return Array.isArray(json.edges) && json.edges.some((e) => e && e.rel !== undefined);
 }
 
-// Free-text rels are mapped by endpoint types, with the rel text breaking
-// ties (threatens vs grounds, converges vs contradicts, yields vs motivates).
-// Returns null when the closed set has nothing honest to offer.
-function mapEdge(relRaw, fromType, toType) {
-  const rel = String(relRaw ?? '').toLowerCase();
-  if (fromType === 'note') return { relation: 'qualifies' };
-  if (fromType === 'task') return { relation: 'blocks' };
-  if (fromType === 'question' && toType === 'question') return { relation: 'asks' };
-  if (fromType === 'gap' && toType === 'question') return { relation: 'motivates' };
-  if (fromType === 'study' && toType === 'question') return { relation: 'addresses' };
-  if (fromType === 'study' && toType === 'study') return { relation: 'extends' };
-  if (fromType === 'study' && toType === 'finding') {
-    // invalidates for retractions; examines (v1.2) for tests and replications
-    // whose object is the earlier result
-    return { relation: /invalidat/.test(rel) ? 'invalidates' : 'examines' };
+function textOf(node) {
+  const bits = [];
+  if (node.detail) bits.push(String(node.detail));
+  for (const [key, value] of Object.entries(node.fields ?? {})) {
+    if (key === 'Detail') bits.push(String(value));
+    else bits.push(`${key}: ${value}`);
   }
-  if (fromType === 'construct') {
-    if (toType === 'finding' || toType === 'claim') return { relation: 'explains' };
-    if (['question', 'study', 'method', 'gap', 'construct'].includes(toType)) {
-      return { relation: 'frames' };
-    }
-  }
-  if ((fromType === 'method' || fromType === 'material') && toType === 'study') {
-    return { relation: 'uses' };
-  }
-  if (fromType === 'claim' && toType === 'question') return { relation: 'answers' };
-  if (fromType === 'claim' && toType === 'claim') return { relation: 'composes' };
-  if (fromType === 'claim' && toType === 'study') return { relation: 'motivates' };
-  if (fromType === 'finding' && toType === 'claim') return { relation: 'supports' };
-  if (fromType === 'claim' && toType === 'finding') {
-    // "cl generalises r" means the finding is the evidence — flip it
-    return { relation: 'supports', flip: true };
-  }
-  if (fromType === 'finding' && toType === 'finding') {
-    if (/invalidat/.test(rel)) return { relation: 'invalidates' };
-    return { relation: /bound/.test(rel) ? 'bounds' : 'supports' };
-  }
-  if (fromType === 'finding' && toType === 'question') {
-    return { relation: 'bounds', approx: true };
-  }
-  if (fromType === 'finding' && toType === 'study') {
-    if (/validat/.test(rel)) return { relation: 'validates' };
-    if (/motivat/.test(rel)) return { relation: 'motivates' };
-    return /yield|headline|finding|audit/.test(rel) ? { relation: 'yields' } : null;
-  }
-  if (fromType === 'source') {
-    if (toType === 'construct') return { relation: 'grounds' };
-    if (toType === 'question') return { relation: 'grounds' };
-    if (toType === 'material') return { relation: 'documents' };
-    if (toType === 'source') return { relation: 'builds-on' };
-    if (toType === 'gap') return { relation: /threat/.test(rel) ? 'threatens' : 'grounds' };
-    if (toType === 'claim') {
-      if (/contradict/.test(rel)) return { relation: 'contradicts' };
-      if (/threat|objection/.test(rel)) return { relation: 'threatens' };
-      if (/converg|precedent|parallel|counterpart|evidence/.test(rel)) return { relation: 'converges' };
-      return { relation: 'grounds' };
-    }
-    if (toType === 'finding') {
-      return /tension|contradict|against/.test(rel)
-        ? { relation: 'contradicts' }
-        : { relation: 'converges' };
-    }
-    if (toType === 'method' || toType === 'study') return { relation: 'inspires' };
-  }
-  return null;
+  return bits.join('\n');
 }
-
-const KNOWN_KEYS = ['id', 'type', 'label', 'detail', 'fields', 'status', 'meta'];
 
 export function migrateOldMap(old) {
-  const report = {
-    droppedEdges: [],
-    approximated: [],
-    droppedStatuses: [],
-    notes: [],
-  };
+  const report = { merged: 0, becameNotes: 0, notes: [] };
+  const oldNodes = (old.nodes ?? []).filter((n) => n && typeof n.id === 'string');
+  const oldById = new Map(oldNodes.map((n) => [n.id, n]));
+  const edges = (old.edges ?? []).filter((e) => e && oldById.has(e.from) && oldById.has(e.to));
+
+  // Which study each result belongs to.
+  const resultHome = new Map();
+  for (const edge of edges) {
+    const from = oldById.get(edge.from);
+    const to = oldById.get(edge.to);
+    if (!RESULT_TYPES.includes(from.type)) continue;
+    if (EXPERIMENT_TYPES.includes(to.type) && YIELD_RELS.includes(relOf(edge))) {
+      if (!resultHome.has(from.id)) resultHome.set(from.id, to.id);
+    }
+  }
+  const resultsFor = new Map();
+  for (const [resultId, studyId] of resultHome) {
+    if (!resultsFor.has(studyId)) resultsFor.set(studyId, []);
+    resultsFor.get(studyId).push(resultId);
+  }
 
   const nodes = [];
-  const typeOf = new Map();
-  for (const n of old.nodes ?? []) {
-    if (!n || typeof n.id !== 'string') continue;
-    let type = TYPE_MAP[n.type];
-    if (!type) {
-      type = 'note';
-      report.notes.push(`node "${n.id}": unknown old type "${n.type}" kept as a note`);
-    }
-    if (n.type === 'venue') report.notes.push(`venue "${n.id}" became a task (§7)`);
+  const idMap = new Map(); // old id → new id (a merged result points at its study)
 
-    const node = { id: n.id, type, label: String(n.label ?? n.id) };
-    if (type === 'claim') node.kind = 'empirical'; // v1.1 default for migrated claims
-    if (n.status) {
-      const mapped = STATUS_MAP[type][n.status];
-      if (mapped) node.status = mapped;
-      else report.droppedStatuses.push(`"${n.id}": a ${type} cannot be "${n.status}"`);
+  for (const n of oldNodes) {
+    if (RESULT_TYPES.includes(n.type) && resultHome.has(n.id)) {
+      idMap.set(n.id, resultHome.get(n.id)); // folded into its experiment below
+      report.merged += 1;
+      continue;
     }
-    if (n.type === 'venue' && !node.status) node.status = 'todo';
+    const mapped = TYPE_MAP[n.type]
+      ?? (RESULT_TYPES.includes(n.type) ? 'experiment' : 'note');
+    const node = { id: n.id, type: mapped, label: String(n.label ?? n.id) };
+    if (n.status) node.status = String(n.status);
+    if (Number.isFinite(n.x) && Number.isFinite(n.y)) { node.x = n.x; node.y = n.y; }
 
-    const fields = {};
-    for (const [key, value] of Object.entries(n.fields ?? {})) fields[key] = String(value);
-    if (n.detail) fields.Detail = String(n.detail);
-    if (Object.keys(fields).length > 0) node.fields = fields;
+    const body = textOf(n);
+    if (mapped === 'experiment') {
+      if (RESULT_TYPES.includes(n.type)) {
+        // an unattached result becomes an experiment that is all result
+        node.result = [n.label, body].filter(Boolean).join('\n');
+        node.label = String(n.label ?? n.id);
+      } else if (body) {
+        node.description = body;
+      }
+      const own = resultsFor.get(n.id) ?? [];
+      if (own.length > 0) {
+        node.result = own.map((rid) => {
+          const r = oldById.get(rid);
+          const rBody = textOf(r);
+          const head = own.length > 1 ? `• ${r.label}` : r.label;
+          return [head, rBody].filter(Boolean).join('\n');
+        }).join('\n\n');
+      }
+    } else if (body) {
+      node.fields = { Detail: body };
+    }
+
+    if (!TYPE_MAP[n.type] && !RESULT_TYPES.includes(n.type)) {
+      node.fields = { ...(node.fields ?? {}), Kind: String(n.type) };
+      report.becameNotes += 1;
+    }
     if (n.meta && typeof n.meta === 'object') node.meta = n.meta;
-    for (const [key, value] of Object.entries(n)) {
-      if (!KNOWN_KEYS.includes(key)) node[key] = value; // bar, root, x, y … survive
-    }
     nodes.push(node);
-    typeOf.set(node.id, node.type);
+    idMap.set(n.id, n.id);
   }
 
-  // The old map attached results to methods; the schema says findings yield
-  // studies. Route each finding → method edge to the method's own study.
-  const methodStudies = new Map();
-  for (const e of old.edges ?? []) {
-    if (typeOf.get(e?.from) === 'method' && typeOf.get(e?.to) === 'study') {
-      if (!methodStudies.has(e.from)) methodStudies.set(e.from, new Set());
-      methodStudies.get(e.from).add(e.to);
+  const newById = new Map(nodes.map((n) => [n.id, n]));
+
+  // Sub-question links become a parent field: `child asks parent`.
+  for (const edge of edges) {
+    if (relOf(edge) !== 'asks' && relOf(edge) !== 'sub-question') continue;
+    const child = newById.get(idMap.get(edge.from));
+    const parent = newById.get(idMap.get(edge.to));
+    if (child?.type === 'question' && parent?.type === 'question' && child.id !== parent.id) {
+      child.parent ??= parent.id;
     }
   }
 
-  const edges = [];
+  const outEdges = [];
   const seen = new Set();
-  const push = (from, relation, to, approxNote) => {
-    const edge = { from, relation, to };
-    const key = edgeKey(edge);
-    if (from === to || seen.has(key)) return;
-    if (!relationAllows(relation, typeOf.get(from), typeOf.get(to))) return;
+  for (const edge of edges) {
+    const rel = relOf(edge);
+    if (rel === 'asks' || rel === 'sub-question') continue;
+    const from = idMap.get(edge.from);
+    const to = idMap.get(edge.to);
+    if (!from || !to || from === to) continue; // dropped: internal to a merge
+    if (!newById.has(from) || !newById.has(to)) continue;
+    const key = `${from}|${rel}|${to}`;
+    if (seen.has(key)) continue;
     seen.add(key);
-    edges.push(edge);
-    if (approxNote) report.approximated.push(approxNote);
-  };
-
-  for (const e of old.edges ?? []) {
-    if (!e) continue;
-    const fromType = typeOf.get(e.from);
-    const toType = typeOf.get(e.to);
-    const describe = `${e.from} —${e.rel}→ ${e.to}`;
-    if (!fromType || !toType) {
-      report.droppedEdges.push(`${describe} (missing endpoint)`);
-      continue;
-    }
-    if (fromType === 'finding' && toType === 'method') {
-      // Every result routes to the method's study as yields. SCHEMA.md §8
-      // (v1.2): validates edges are additions the migration cannot infer —
-      // the author adds them by hand afterwards.
-      const studies = methodStudies.get(e.to);
-      if (studies?.size === 1) push(e.from, 'yields', [...studies][0]);
-      else report.droppedEdges.push(`${describe} (method serves ${studies?.size ?? 0} studies)`);
-      continue;
-    }
-    const mapped = mapEdge(e.rel, fromType, toType);
-    if (!mapped) {
-      report.droppedEdges.push(`${describe} (schema has no ${fromType} → ${toType} relation)`);
-      continue;
-    }
-    if (mapped.flip) {
-      push(e.to, mapped.relation, e.from);
-    } else {
-      push(e.from, mapped.relation, e.to,
-        mapped.approx ? `${describe} → bounds (nearest legal relation)` : undefined);
-    }
+    outEdges.push({ from, relation: edge.relation ?? edge.rel ?? '', to });
   }
 
   const meta = { ...(old.meta ?? {}) };
   meta.id ??= slugify(meta.title ?? 'migrated-map');
-  return { graph: { version: 1, meta, nodes, edges }, report };
+  return { graph: { version: 2, meta, nodes, edges: outEdges }, report };
 }
