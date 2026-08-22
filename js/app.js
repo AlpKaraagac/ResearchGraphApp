@@ -661,10 +661,15 @@ async function loadInitialGraph() {
       showEmpty('The graph embedded in this file is invalid.');
       return;
     }
+    // Prefer a locally-edited copy only when it can be SHOWN to be newer. If
+    // the file carries no timestamp there is nothing to compare against, and
+    // the graph the reader just opened must win — otherwise a stale copy of an
+    // earlier version of the same file hides the file's own contents.
     const stored = store.load(embedded.meta?.id);
     const storedIsNewer = stored
       && validateGraph(stored).length === 0
-      && (stored.meta?.modified ?? '') > (embedded.meta?.modified ?? '');
+      && Boolean(embedded.meta?.modified)
+      && (stored.meta?.modified ?? '') > embedded.meta.modified;
     adoptGraph(storedIsNewer ? stored : embedded);
     setSaveIndicator(true);
     return;

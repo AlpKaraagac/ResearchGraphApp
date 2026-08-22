@@ -384,6 +384,37 @@ test('re-import updates rather than duplicating, and never touches status', () =
   assertEqual(node.status, 'verified', 'status survives a re-import');
 });
 
+// ---- embedded vs stored precedence ----------------------------------------
+
+describe('Embedded file versus a stored copy');
+
+// The rule the loader applies when a self-contained file is opened and the
+// browser already holds a graph with the same id.
+function storedWins(embedded, stored) {
+  return Boolean(stored)
+    && validateGraph(stored).length === 0
+    && Boolean(embedded.meta?.modified)
+    && (stored.meta?.modified ?? '') > embedded.meta.modified;
+}
+
+test('a file with no timestamp wins over any stored copy', () => {
+  // Otherwise a stale copy of an earlier version of the same file hides the
+  // file's own contents — which is exactly how a gutted graph kept showing.
+  const embedded = { meta: { id: 'g' }, nodes: [n('ex1', 'experiment', { result: 'the numbers' })], edges: [] };
+  const stored = { meta: { id: 'g', modified: '2026-08-22T09:15:38.775Z' },
+                   nodes: [n('ex1', 'experiment')], edges: [] };
+  assert(!storedWins(embedded, stored), 'the opened file wins');
+});
+
+test('a genuinely newer local edit still wins over a timestamped file', () => {
+  const embedded = { meta: { id: 'g', modified: '2026-08-01T00:00:00.000Z' }, nodes: [], edges: [] };
+  const newer = { meta: { id: 'g', modified: '2026-08-02T00:00:00.000Z' }, nodes: [], edges: [] };
+  const older = { meta: { id: 'g', modified: '2026-07-01T00:00:00.000Z' }, nodes: [], edges: [] };
+  assert(storedWins(embedded, newer), 'later edits are not discarded');
+  assert(!storedWins(embedded, older), 'an older copy never wins');
+  assert(!storedWins(embedded, null), 'nothing stored, nothing to prefer');
+});
+
 // ---- the clear safety net --------------------------------------------------
 
 describe('Store — the backup behind Clear');
