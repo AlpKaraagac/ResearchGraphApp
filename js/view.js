@@ -8,6 +8,14 @@ const DRAG_THRESHOLD = 6;
 const GRID = 24; // must match the canvas background-size in app.css
 
 export function createView(canvas, viewport) {
+  // The detail panel and the floating buttons sit INSIDE the canvas element, so
+  // their events bubble to these handlers. Without this guard a scroll over the
+  // panel zooms the map instead of scrolling the panel, and a drag inside it
+  // pans the map. An event that starts in a control belongs to that control.
+  const OVERLAYS = '#detail, #add-node-btn, #empty-state';
+  const inOverlay = (event) => event.target instanceof Element
+    && event.target.closest(OVERLAYS) !== null;
+
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
   let tx = 0;
   let ty = 0;
@@ -38,6 +46,7 @@ export function createView(canvas, viewport) {
   }
 
   canvas.addEventListener('wheel', (event) => {
+    if (inOverlay(event)) return; // let the panel scroll itself
     event.preventDefault();
     stopAnimation();
     const rect = canvas.getBoundingClientRect();
@@ -46,6 +55,7 @@ export function createView(canvas, viewport) {
 
   canvas.addEventListener('pointerdown', (event) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
+    if (inOverlay(event)) return; // a drag inside the panel is a scroll, not a pan
     stopAnimation();
     pointers.set(event.pointerId, {
       x: event.clientX, y: event.clientY,

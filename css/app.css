@@ -377,7 +377,7 @@ button {
   right: 0;
   bottom: 0;
   z-index: 10;
-  max-height: 58%;
+  max-height: 70%;
   overflow-y: auto;
   overscroll-behavior: contain;
   background: var(--surface);
